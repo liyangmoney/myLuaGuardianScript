@@ -52,6 +52,14 @@ local g_logFile = ""  -- 当前日志文件路径（按启动时间命名）
 local function writeLog(level, msg)
     if g_logFile == "" then return end
     
+    -- 确保目录存在
+    dir.Create(CONFIG.LOG_DIR)
+    
+    -- 如果文件不存在，先创建空文件
+    if not File.Exist(g_logFile) then
+        File.Write(g_logFile, "")
+    end
+    
     local timeStr = DateTime.Format("HH:mm:ss", Now())
     local line = string.format("[%s] [%s] %s\n", timeStr, level, msg)
     File.Append(g_logFile, line)
@@ -90,6 +98,7 @@ end
 
 -- 创建锁
 local function createLock()
+    dir.Create(CONFIG.LOG_DIR)
     File.Write(CONFIG.LOCK_FILE, tostring(TickCount()))
 end
 
