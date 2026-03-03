@@ -1,8 +1,8 @@
 -- ============================================
 -- 按键精灵移动版 - 进程守护插件
 -- 文件名: GuardianPlugin.lua
--- 版本: 3.1.0
--- 描述: 无界面版进程守护插件
+-- 版本: 3.2.0
+-- 描述: 无界面版进程守护插件，防重复启动
 -- 
 -- 使用方式:
 -- 1. 将此文件放入按键精灵安装目录的 Plugin 文件夹
@@ -31,6 +31,9 @@ local CONFIG = {
     
     -- 日志配置
     LOG_FILE = "/sdcard/按键精灵/guardian_log.txt",
+    
+    -- 锁文件 (用于防重复启动)
+    LOCK_FILE = "/sdcard/按键精灵/guardian.lock",
 }
 
 -- ==================== 全局变量 ====================
@@ -40,22 +43,57 @@ local g_lastRestartTime = 0
 local g_lastHeartbeatTime = 0
 local g_status = "停止"
 local g_startTime = 0
-local g_guardianThread = nil
 
 -- ==================== 日志函数 ====================
 
--- 写入日志 (使用文件方式，因为插件中TracePrint可能不可用)
+-- 写入日志 (日志文件位置: /sdcard/按键精灵/guardian_log.txt)
 local function writeLog(level, msg)
     local timeStr = DateTime.Format("HH:mm:ss", Now())
     local line = string.format("[%s] [%s] %s\n", timeStr, level, msg)
-    
-    -- 追加写入日志文件
     File.Append(CONFIG.LOG_FILE, line)
+end
+
+-- ==================== 锁机制 (防重复启动) ====================
+
+-- 检查是否已有守护在运行
+local function isAnotherGuardianRunning()
+    -- 检查锁文件是否存在
+    if not File.Exist(CONFIG.LOCK_FILE) then
+        return false
+    end
     
-    -- 同时尝试使用 TracePrint
-    pcall(function()
-        LuaAuxLib.TracePrint(line)
-    end)
+    -- 读取锁文件内容 (进程启动时间)
+    local lockContent = File.Read(CONFIG.LOCK_FILE)
+    if not lockContent or lockContent == "" then
+        return false
+    end
+    
+    local lockTick = tonumber(lockContent)
+    if not lockTick then
+        return false
+    end
+    
+    -- 如果锁时间超过2分钟，认为锁已过期（防止意外崩溃导致死锁）
+    local currentTick = TickCount()
+    if currentTick - lockTick > 120000 then
+        writeLog("WARN", "检测到过期锁，清除...")
+        File.Delete(CONFIG.LOCK_FILE)
+        return false
+    end
+    
+    return true
+end
+
+-- 创建锁
+local function createLock()
+    File.Write(CONFIG.LOCK_FILE, tostring(TickCount()))
+end
+
+-- 清除锁
+local function clearLock()
+    if File.Exist(CONFIG.LOCK_FILE) then
+        File.Delete(CONFIG.LOCK_FILE)
+    end
 end
 
 -- ==================== 工具函数 ====================
@@ -188,7 +226,7 @@ local function guardianLoop()
     writeLog("INFO", "========================================")
     writeLog("INFO", "进程守护插件启动")
     writeLog("INFO", "目标脚本: " .. CONFIG.MAIN_SCRIPT_NAME)
-    writeLog("INFO", "心跳文件: " .. CONFIG.HEARTBEAT_FILE)
+    writeLog("INFO", "日志文件: " .. CONFIG.LOG_FILE)
     writeLog("INFO", "========================================")
     
     -- 首次启动主脚本
@@ -221,16 +259,27 @@ local function guardianLoop()
     
     writeLog("INFO", "守护插件停止")
     g_status = "停止"
-    g_guardianThread = nil
+    
+    -- 清除锁
+    clearLock()
 end
 
 -- ==================== 插件导出函数 ====================
 
 -- 启动守护 (导出函数)
 function QMPlugin.StartGuardian()
+    -- 检查是否已在运行 (内存中)
     if g_running then
         return "守护已在运行中"
     end
+    
+    -- 检查是否有其他守护进程在运行 (文件锁)
+    if isAnotherGuardianRunning() then
+        return "已有另一个守护进程在运行"
+    end
+    
+    -- 创建锁
+    createLock()
     
     g_running = true
     g_restartCount = 0
@@ -240,7 +289,21 @@ function QMPlugin.StartGuardian()
     g_status = "初始化"
     
     -- 在独立线程中启动守护循环
-    g_guardianThread = Thread.Start(guardianLoop)
+    -- 注意: Thread.Start 应该接受一个函数，但按键精灵可能只支持字符串
+    -- 这里使用 coroutine 或直接用 Thread.Start 启动一个函数
+    local ok = Thread.Start(function()
+        guardianLoop()
+    end)
+    
+    if not ok then
+        -- 如果 Thread.Start 失败，可能是参数问题，尝试直接运行（会阻塞）
+        -- 但这不应该发生，所以先记录错误
+        writeLog("ERROR", "Thread.Start 失败，尝试使用协程")
+        
+        -- 使用协程方式
+        local co = coroutine.create(guardianLoop)
+        coroutine.resume(co)
+    end
     
     return "守护已启动"
 end
@@ -252,11 +315,7 @@ function QMPlugin.StopGuardian()
     end
     
     g_running = false
-    
-    -- 等待守护线程结束
-    if g_guardianThread then
-        Thread.Wait(g_guardianThread, 5000)
-    end
+    clearLock()
     
     return "守护已停止"
 end
@@ -294,5 +353,5 @@ end
 
 -- 测试插件是否加载成功 (导出函数)
 function QMPlugin.Test()
-    return "GuardianPlugin 加载成功 v3.1.0"
+    return "GuardianPlugin v3.2.0 加载成功"
 end
