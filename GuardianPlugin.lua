@@ -176,6 +176,14 @@ function QMPlugin.StopGuardian()
     if not fileExists(PID_FILE) then return "守护未运行" end
     local pid = readFile(PID_FILE):gsub("%s+", "")
     if pid ~= "" then
+        -- 先发送 TERM 信号
+        exec(string.format("kill -TERM %s 2>/dev/null", pid))
+        -- 等待5秒
+        local t = os.time()
+        while os.time() - t < 5 do end
+        -- 检查是否还在运行
+        exec(string.format("ps | grep %s | grep -v grep > /dev/null 2>&1", pid))
+        -- 如果还在，发送 KILL
         exec(string.format("kill -9 %s 2>/dev/null", pid))
     end
     os.remove(PID_FILE)
@@ -184,14 +192,19 @@ end
 
 function QMPlugin.StopAllGuardian()
     local cnt = 0
+    -- 先停止 PID 文件的
     if fileExists(PID_FILE) then
         local pid = readFile(PID_FILE):gsub("%s+", "")
         if pid ~= "" then
+            exec(string.format("kill -TERM %s 2>/dev/null", pid))
+            local t = os.time()
+            while os.time() - t < 3 do end
             exec(string.format("kill -9 %s 2>/dev/null", pid))
             cnt = cnt + 1
         end
         os.remove(PID_FILE)
     end
+    -- 再查找所有残留
     local tmp = "/sdcard/guardian/.stop"
     exec(string.format("ps | grep GuardianShell | grep -v grep > %s", tmp))
     if fileExists(tmp) then
@@ -199,12 +212,15 @@ function QMPlugin.StopAllGuardian()
         for line in content:gmatch("[^\r\n]+") do
             local p = line:match("^%s*(%d+)")
             if p then
+                exec(string.format("kill -TERM %s 2>/dev/null", p))
                 exec(string.format("kill -9 %s 2>/dev/null", p))
                 cnt = cnt + 1
             end
         end
         os.remove(tmp)
     end
+    -- 清理所有相关的 sh 进程
+    exec("ps | grep 'sh /sdcard/guardian/GuardianShell.sh' | grep -v grep | awk '{print $2}' | xargs kill -9 2>/dev/null")
     return "已停止 " .. cnt .. " 个进程"
 end
 
