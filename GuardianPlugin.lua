@@ -1,43 +1,28 @@
 -- ============================================
 -- 按键精灵移动版 - Shell守护启动插件
 -- 文件名: GuardianPlugin.lua
--- 版本: 4.0.0
--- 描述: 启动独立Shell守护进程，Shell进程独立运行
+-- 版本: 4.2.0
+-- 描述: 启动独立Shell守护进程
 -- 
--- 使用方式:
--- 1. 将 GuardianShell.sh 放入 /sdcard/guardian/
--- 2. 将此文件放入按键精灵安装目录的 Plugin 文件夹
--- 3. 在脚本中使用: Import "GuardianPlugin"
--- 4. 调用: GuardianPlugin.StartGuardian()
+-- 注意：按键精灵插件只执行 QMPlugin 下的函数
 -- ============================================
 
 -- 定义插件命名空间
 QMPlugin = {}
 
--- ==================== 配置区域 ====================
-local CONFIG = {
-    -- Shell脚本路径
-    SHELL_SCRIPT = "/sdcard/guardian/GuardianShell.sh",
-    
-    -- 心跳配置
-    HEARTBEAT_FILE = "/sdcard/guardian/heartbeat.txt",
-    
-    -- PID文件
-    PID_FILE = "/sdcard/guardian/guardian_shell.pid",
-    
-    -- 日志目录
-    LOG_DIR = "/sdcard/guardian",
-}
+-- 配置（函数外只支持变量定义）
+local SHELL_SCRIPT = "/sdcard/guardian/GuardianShell.sh"
+local PID_FILE = "/sdcard/guardian/guardian_shell.pid"
+local HEARTBEAT_FILE = "/sdcard/guardian/heartbeat.txt"
+local LOG_DIR = "/sdcard/guardian"
 
--- ==================== Shell脚本模板 ====================
-local SHELL_TEMPLATE = [[#!/system/bin/sh
+-- Shell脚本模板
+local SHELL_TEMPLATE = [==[#!/system/bin/sh
 # ============================================
 # 按键精灵守护Shell脚本 (自动生成)
 # 主脚本: %s
-# 生成时间: %s
 # ============================================
 
-# 配置
 HEARTBEAT_FILE="/sdcard/guardian/heartbeat.txt"
 HEARTBEAT_INTERVAL=5
 HEARTBEAT_TIMEOUT=15
@@ -49,7 +34,6 @@ LOG_FILE="${LOG_DIR}/shell_guardian_$(date +%%Y%%m%%d_%%H%%M%%S).log"
 PID_FILE="/sdcard/guardian/guardian_shell.pid"
 MAIN_SCRIPT_NAME="%s"
 
-# 日志函数
 log() {
     local level="$1"
     local msg="$2"
@@ -57,7 +41,6 @@ log() {
     echo "[${time_str}] [${level}] ${msg}" >> "$LOG_FILE"
 }
 
-# 检查是否已在运行
 check_running() {
     if [ -f "$PID_FILE" ]; then
         local old_pid=$(cat "$PID_FILE")
@@ -78,17 +61,14 @@ check_running() {
     return 1
 }
 
-# 更新PID
 update_pid() {
     echo $$ > "$PID_FILE"
 }
 
-# 清除PID
 clear_pid() {
     rm -f "$PID_FILE"
 }
 
-# 读取心跳
 read_heartbeat() {
     if [ -f "$HEARTBEAT_FILE" ]; then
         cat "$HEARTBEAT_FILE"
@@ -97,12 +77,10 @@ read_heartbeat() {
     fi
 }
 
-# 获取当前时间(秒)
 get_time() {
     date +%%s
 }
 
-# 格式化运行时间
 format_runtime() {
     local seconds=$1
     local hours=$((seconds / 3600))
@@ -117,30 +95,25 @@ format_runtime() {
     fi
 }
 
-# 启动主脚本
 start_main() {
     log "INFO" "启动主脚本: $MAIN_SCRIPT_NAME"
     mkdir -p "$LOG_DIR"
     echo "$(get_time)" > "$HEARTBEAT_FILE"
-    # 启动按键精灵主脚本
     am start -a android.intent.action.MAIN -n com.cyjh.gundam/.activity.MainActivity 2>/dev/null
     sleep 2
     log "INFO" "主脚本启动完成"
 }
 
-# 重启主脚本
 restart_main() {
-    log "WARN" "第${restart_count}次重启..."
+    local count=$1
+    log "WARN" "第${count}次重启..."
     sleep "$RESTART_DELAY"
     echo "0" > "$HEARTBEAT_FILE"
-    last_heartbeat=0
     start_main
 }
 
-# 主循环
 main_loop() {
     if check_running; then
-        echo "已有守护在运行，退出"
         exit 1
     fi
     
@@ -188,7 +161,7 @@ main_loop() {
                     break
                 fi
                 
-                restart_main
+                restart_main $restart_count
             fi
         fi
         
@@ -205,175 +178,185 @@ main_loop() {
     clear_pid
 }
 
-trap 'log "INFO" "收到退出信号"; clear_pid; exit 0' TERM INT
+trap 'clear_pid; exit 0' TERM INT
 main_loop
-]]
+]==]
+
+-- 辅助函数：执行shell命令
+local function exec(cmd)
+    return Sys.Execute(cmd)
+end
+
+-- 辅助函数：检查文件是否存在
+local function fileExists(path)
+    local result = exec(string.format("ls %s 2>/dev/null && echo YES || echo NO", path))
+    return string.find(result, "YES") ~= nil
+end
+
+-- 辅助函数：写入文件
+local function writeFile(path, content)
+    -- 使用echo写入，处理换行
+    local cmd = string.format("echo '%s' > %s", content:gsub("'", "'\"'\"'"), path)
+    exec(cmd)
+end
+
+-- 辅助函数：检查Shell守护是否运行
+local function isRunning()
+    if not fileExists(PID_FILE) then
+        return false
+    end
+    
+    -- 读取PID
+    local pid = exec(string.format("cat %s 2>/dev/null", PID_FILE))
+    pid = pid:gsub("%s+", "")  -- 去除空白
+    
+    if pid == "" then
+        return false
+    end
+    
+    -- 检查进程是否存在
+    local result = exec(string.format("ps | grep %s | grep -v grep", pid))
+    return string.find(result, pid) ~= nil
+end
 
 -- 生成Shell脚本
-local function generateShellScript(scriptName)
+local function generateScript(scriptName)
     local timeStr = DateTime.Format("yyyy-MM-dd HH:mm:ss", Now())
-    local content = string.format(SHELL_TEMPLATE, scriptName, timeStr, scriptName)
+    local content = string.format(SHELL_TEMPLATE, scriptName, scriptName)
     
-    -- 使用shell命令创建目录（更可靠）
-    Sys.Execute("mkdir -p /sdcard/guardian")
+    -- 创建目录
+    exec("mkdir -p " .. LOG_DIR)
     
-    -- 写入Shell脚本
-    File.Write(CONFIG.SHELL_SCRIPT, content)
+    -- 使用echo逐行写入（处理特殊字符）
+    local lines = {}
+    for line in content:gmatch("[^\r\n]+") do
+        table.insert(lines, line)
+    end
     
-    -- 给脚本添加执行权限
-    Sys.Execute("chmod +x " .. CONFIG.SHELL_SCRIPT)
+    -- 先创建空文件
+    exec(string.format("> %s", SHELL_SCRIPT))
+    
+    -- 逐行追加
+    for _, line in ipairs(lines) do
+        -- 转义特殊字符
+        line = line:gsub("\"", "\\\"")
+        line = line:gsub("\$", "\\$")
+        local cmd = string.format("echo \"%s\" >> %s", line, SHELL_SCRIPT)
+        exec(cmd)
+    end
+    
+    -- 添加执行权限
+    exec("chmod +x " .. SHELL_SCRIPT)
     
     return true
 end
 
--- ==================== 工具函数 ====================
-
--- 检查Shell守护是否正在运行
-local function isShellRunning()
-    if not File.Exist(CONFIG.PID_FILE) then
-        return false
-    end
-    
-    local pid = File.Read(CONFIG.PID_FILE)
-    if not pid or pid == "" then
-        return false
-    end
-    
-    -- 检查进程是否存在 (使用shell命令)
-    local checkCmd = string.format("kill -0 %s 2>/dev/null && echo \"running\" || echo \"not running\"", pid)
-    local result = Sys.Execute(checkCmd)
-    
-    return string.find(result, pid) ~= nil
-end
-
 -- ==================== 插件导出函数 ====================
 
--- 启动Shell守护 (导出函数)
-function QMPlugin.StartGuardian()
-    -- 检查是否已有Shell守护在运行
-    if isShellRunning() then
-        return "Shell守护已在运行中"
-    end
-    
-    -- 确保Shell脚本存在
-    if not File.Exist(CONFIG.SHELL_SCRIPT) then
-        return "错误: Shell脚本不存在: " .. CONFIG.SHELL_SCRIPT
-    end
-    
-    -- 使用sh命令在后台启动Shell脚本
-    -- nohup确保在按键精灵退出后Shell继续运行
-    local cmd = string.format("sh %s > /dev/null 2>&1 &", CONFIG.SHELL_SCRIPT)
-    local result = Sys.Execute(cmd)
-    
-    -- 等待一下让Shell启动
-    Delay(1000)
-    
-    -- 检查是否成功启动
-    if isShellRunning() then
-        return "Shell守护已启动"
-    else
-        return "Shell守护启动失败: " .. result
-    end
+-- 测试插件
+function QMPlugin.Test()
+    return "GuardianPlugin v4.2.0 加载成功"
 end
 
--- 停止Shell守护 (导出函数)
-function QMPlugin.StopGuardian()
-    if not File.Exist(CONFIG.PID_FILE) then
-        return "Shell守护未运行"
-    end
-    
-    local pid = File.Read(CONFIG.PID_FILE)
-    if not pid or pid == "" then
-        return "无法读取PID"
-    end
-    
-    -- 发送终止信号
-    local cmd = string.format("kill -TERM %s", pid)
-    Sys.Execute(cmd)
-    
-    -- 等待进程结束
-    Delay(2000)
-    
-    -- 强制结束（如果还在运行）
-    if isShellRunning() then
-        cmd = string.format("kill -9 %s", pid)
-        Sys.Execute(cmd)
-    end
-    
-    -- 删除PID文件
-    if File.Exist(CONFIG.PID_FILE) then
-        File.Delete(CONFIG.PID_FILE)
-    end
-    
-    return "Shell守护已停止"
-end
-
--- 获取守护状态 (导出函数)
-function QMPlugin.GetStatus()
-    if isShellRunning() then
-        local pid = File.Read(CONFIG.PID_FILE)
-        return string.format("Shell守护运行中 PID:%s", pid)
-    else
-        return "Shell守护未运行"
-    end
-end
-
--- 发送心跳 (供主脚本调用，导出函数)
+-- 发送心跳
 function QMPlugin.SendHeartbeat()
-    File.Write(CONFIG.HEARTBEAT_FILE, tostring(TickCount()))
+    local cmd = string.format("echo %s > %s", TickCount(), HEARTBEAT_FILE)
+    exec(cmd)
     return "OK"
 end
 
--- 设置主脚本名称 (导出函数)
--- 自动检测Shell守护状态，如未运行则自动生成并启动
+-- 设置主脚本并自动启动守护
 function QMPlugin.SetMainScript(scriptName)
-    -- 1. 检查Shell守护是否已在运行
-    if isShellRunning() then
-        -- Shell已在运行，只需要修改配置
-        -- 生成新的Shell脚本（包含新的主脚本名）
-        generateShellScript(scriptName)
-        return "主脚本已设置为:" .. scriptName .. " (Shell守护已在运行)"
+    -- 检查是否已在运行
+    if isRunning() then
+        -- 更新配置
+        generateScript(scriptName)
+        return "主脚本已设置:" .. scriptName .. " (守护运行中)"
     end
     
-    -- 2. Shell未运行，自动生成Shell脚本
-    local success, err = pcall(function()
-        generateShellScript(scriptName)
+    -- 生成Shell脚本
+    local ok, err = pcall(function()
+        generateScript(scriptName)
     end)
     
-    if not success then
-        return "错误: 生成Shell脚本失败 - " .. tostring(err)
+    if not ok then
+        return "错误:生成脚本失败-" .. tostring(err)
     end
     
-    -- 3. 等待文件写入完成
-    Delay(1000)
-    
-    -- 4. 验证文件是否生成成功
-    if not File.Exist(CONFIG.SHELL_SCRIPT) then
-        return "错误: Shell脚本文件未生成"
+    -- 验证文件
+    Delay(500)
+    if not fileExists(SHELL_SCRIPT) then
+        return "错误:脚本文件未生成"
     end
     
-    -- 5. 自动启动Shell守护
-    local cmd = string.format("sh %s > /dev/null 2>&1 &", CONFIG.SHELL_SCRIPT)
-    Sys.Execute(cmd)
+    -- 启动Shell
+    local cmd = string.format("sh %s > /dev/null 2>&1 &", SHELL_SCRIPT)
+    exec(cmd)
     
-    -- 6. 等待Shell启动
+    -- 等待启动
     Delay(2000)
     
-    -- 7. 检查是否成功启动
-    if isShellRunning() then
-        return "主脚本:" .. scriptName .. " | Shell守护已自动生成并启动"
+    if isRunning() then
+        return "主脚本:" .. scriptName .. " | 守护已启动"
     else
-        -- 再试一次
         Delay(1000)
-        if isShellRunning() then
-            return "主脚本:" .. scriptName .. " | Shell守护已自动生成并启动"
+        if isRunning() then
+            return "主脚本:" .. scriptName .. " | 守护已启动"
         else
-            return "错误: Shell守护启动失败，请检查日志"
+            return "错误:守护启动失败"
         end
     end
 end
 
--- 测试插件是否加载成功 (导出函数)
-function QMPlugin.Test()
-    return "GuardianPlugin v4.1.1 (Shell版) 加载成功"
+-- 手动启动守护（需脚本已存在）
+function QMPlugin.StartGuardian()
+    if isRunning() then
+        return "守护已在运行"
+    end
+    
+    if not fileExists(SHELL_SCRIPT) then
+        return "错误:脚本不存在，请先SetMainScript"
+    end
+    
+    local cmd = string.format("sh %s > /dev/null 2>&1 &", SHELL_SCRIPT)
+    exec(cmd)
+    
+    Delay(1500)
+    
+    if isRunning() then
+        return "守护已启动"
+    else
+        return "守护启动失败"
+    end
+end
+
+-- 停止守护
+function QMPlugin.StopGuardian()
+    if not fileExists(PID_FILE) then
+        return "守护未运行"
+    end
+    
+    local pid = exec(string.format("cat %s 2>/dev/null", PID_FILE))
+    pid = pid:gsub("%s+", "")
+    
+    if pid ~= "" then
+        exec(string.format("kill -TERM %s 2>/dev/null", pid))
+        Delay(2000)
+        exec(string.format("kill -9 %s 2>/dev/null", pid))
+    end
+    
+    exec(string.format("rm -f %s", PID_FILE))
+    
+    return "守护已停止"
+end
+
+-- 获取状态
+function QMPlugin.GetStatus()
+    if isRunning() then
+        local pid = exec(string.format("cat %s 2>/dev/null", PID_FILE))
+        pid = pid:gsub("%s+", "")
+        return "守护运行中 PID:" .. pid
+    else
+        return "守护未运行"
+    end
 end
