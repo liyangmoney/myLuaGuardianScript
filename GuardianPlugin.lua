@@ -155,7 +155,6 @@ local function generateScript(scriptName)
         .. "            if [ \"$elapsed\" -gt \"$HEARTBEAT_TIMEOUT\" ]; then\n"
         .. "                log WARN \"Timeout: ${elapsed}s\"\n"
         .. "                restart_count=$((restart_count + 1))\n"
-"
         .. "                if [ \"$restart_count\" -gt \"$MAX_RESTART\" ]; then\n"
         .. "                    log FATAL \"Max restart reached\"\n"
         .. "                    break\n"
