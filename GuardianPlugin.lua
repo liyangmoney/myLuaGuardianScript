@@ -17,10 +17,10 @@ QMPlugin = {}
 local CONFIG = {
     -- 主脚本配置
     MAIN_SCRIPT_NAME = "MainScript",
-    MAIN_SCRIPT_PATH = "/sdcard/按键精灵/脚本/MainScript.lua",
+    MAIN_SCRIPT_PATH = "/sdcard/guardian/script/MainScript.lua",
     
     -- 心跳配置
-    HEARTBEAT_FILE = "/sdcard/按键精灵/heartbeat.txt",
+    HEARTBEAT_FILE = "/sdcard/guardian/heartbeat.txt",
     HEARTBEAT_INTERVAL = 5000,      -- 检测间隔 5秒
     HEARTBEAT_TIMEOUT = 15000,      -- 超时时间 15秒
     

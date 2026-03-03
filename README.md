@@ -97,7 +97,7 @@ end
 
 插件使用**文件锁**机制防止重复启动：
 
-1. **启动检查**: `StartGuardian()` 会先检查 `/sdcard/按键精灵/guardian.lock` 文件
+1. **启动检查**: `StartGuardian()` 会先检查 `/sdcard/guardian/guardian.lock` 文件
 2. **锁超时**: 如果锁文件存在且超过60秒未更新，认为已过期，可以抢占
 3. **锁更新**: 守护进程每60秒更新锁文件时间戳
 4. **自动释放**: 停止守护时自动删除锁文件
@@ -191,10 +191,10 @@ GuardianPlugin.SetTimeout(15000)  -- 15秒
 local CONFIG = {
     -- 主脚本配置
     MAIN_SCRIPT_NAME = "MainScript",
-    MAIN_SCRIPT_PATH = "/sdcard/按键精灵/脚本/MainScript.lua",
+    MAIN_SCRIPT_PATH = "/sdcard/guardian/script/MainScript.lua",
     
     -- 心跳配置
-    HEARTBEAT_FILE = "/sdcard/按键精灵/heartbeat.txt",
+    HEARTBEAT_FILE = "/sdcard/guardian/heartbeat.txt",
     HEARTBEAT_INTERVAL = 5000,      -- 检测间隔 5秒
     HEARTBEAT_TIMEOUT = 15000,      -- 超时时间 15秒
     

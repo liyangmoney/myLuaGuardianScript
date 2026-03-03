@@ -15,7 +15,7 @@ local CONFIG = {
 -- 通过全局变量或文件方式通信
 local function sendHeartbeat()
     -- 方式1：通过文件记录心跳时间戳
-    local heartbeatFile = "/sdcard/按键精灵/心跳/heartbeat.txt"
+    local heartbeatFile = "/sdcard/guardian/heartbeat.txt"
     local f = io.open(heartbeatFile, "w")
     if f then
         f:write(tostring(mTime()))
@@ -31,7 +31,7 @@ end
 -- 初始化
 function init()
     -- 创建心跳目录
-    os.execute("mkdir -p /sdcard/按键精灵/心跳")
+    os.execute("mkdir -p /sdcard/guardian")
     
     -- 首次心跳
     sendHeartbeat()

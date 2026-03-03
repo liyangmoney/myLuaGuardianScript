@@ -8,10 +8,10 @@
 local CONFIG = {
     -- 主脚本配置
     MAIN_SCRIPT_NAME = "主脚本",           -- 主脚本名称
-    MAIN_SCRIPT_PATH = "/sdcard/按键精灵/脚本/主脚本.lua",  -- 主脚本路径
+    MAIN_SCRIPT_PATH = "/sdcard/guardian/script/main.lua",  -- 主脚本路径
     
     -- 心跳配置
-    HEARTBEAT_FILE = "/sdcard/按键精灵/心跳/heartbeat.txt",  -- 心跳文件路径
+    HEARTBEAT_FILE = "/sdcard/guardian/heartbeat.txt",  -- 心跳文件路径
     HEARTBEAT_INTERVAL = 5000,             -- 检测间隔（毫秒）
     HEARTBEAT_TIMEOUT = 15000,             -- 超时时间（毫秒）
     
@@ -22,7 +22,7 @@ local CONFIG = {
     
     -- 日志配置
     LOG_ENABLED = true,
-    LOG_DIR = "/sdcard/按键精灵/日志/",
+    LOG_DIR = "/sdcard/guardian/log/",
     LOG_MAX_DAYS = 7,                      -- 保留7天日志
     
     -- UI配置
