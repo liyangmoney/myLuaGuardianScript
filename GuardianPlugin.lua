@@ -29,11 +29,12 @@ local CONFIG = {
     MAX_RESTART_ATTEMPTS = 10,      -- 最大重启次数
     RESTART_RESET_TIME = 60000,     -- 重启计数重置时间 1分钟
     
-    -- 日志配置
-    LOG_FILE = "/sdcard/按键精灵/guardian_log.txt",
+    -- 日志配置 (按时间命名)
+    LOG_DIR = "/sdcard/guardian/",
+    LOG_PREFIX = "guardian_log_",
     
     -- 锁文件 (用于防重复启动)
-    LOCK_FILE = "/sdcard/按键精灵/guardian.lock",
+    LOCK_FILE = "/sdcard/guardian/guardian.lock",
 }
 
 -- ==================== 全局变量 ====================
@@ -43,14 +44,17 @@ local g_lastRestartTime = 0
 local g_lastHeartbeatTime = 0
 local g_status = "停止"
 local g_startTime = 0
+local g_logFile = ""  -- 当前日志文件路径（按启动时间命名）
 
 -- ==================== 日志函数 ====================
 
--- 写入日志 (日志文件位置: /sdcard/按键精灵/guardian_log.txt)
+-- 写入日志 (日志文件按启动时间命名: /sdcard/guardian/guardian_log_YYYYMMDD_HHMMSS.txt)
 local function writeLog(level, msg)
+    if g_logFile == "" then return end
+    
     local timeStr = DateTime.Format("HH:mm:ss", Now())
     local line = string.format("[%s] [%s] %s\n", timeStr, level, msg)
-    File.Append(CONFIG.LOG_FILE, line)
+    File.Append(g_logFile, line)
 end
 
 -- ==================== 锁机制 (防重复启动) ====================
@@ -226,7 +230,7 @@ local function guardianLoop()
     writeLog("INFO", "========================================")
     writeLog("INFO", "进程守护插件启动")
     writeLog("INFO", "目标脚本: " .. CONFIG.MAIN_SCRIPT_NAME)
-    writeLog("INFO", "日志文件: " .. CONFIG.LOG_FILE)
+    writeLog("INFO", "日志文件: " .. g_logFile)
     writeLog("INFO", "========================================")
     
     -- 首次启动主脚本
@@ -280,6 +284,11 @@ function QMPlugin.StartGuardian()
     
     -- 创建锁
     createLock()
+    
+    -- 创建日志目录并生成日志文件名
+    dir.Create(CONFIG.LOG_DIR)
+    local dateStr = DateTime.Format("yyyyMMdd_HHmmss", Now())
+    g_logFile = CONFIG.LOG_DIR .. CONFIG.LOG_PREFIX .. dateStr .. ".txt"
     
     g_running = true
     g_restartCount = 0

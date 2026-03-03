@@ -11,14 +11,20 @@
 
 ## 📂 日志位置
 
-日志文件保存在：
+日志文件按启动时间命名，保存在：
 ```
-/sdcard/按键精灵/日志/guardian_log.txt
+/sdcard/guardian/guardian_log_YYYYMMDD_HHMMSS.txt
 ```
 
-每次启动会追加写入，可通过以下方式查看：
-- 在按键精灵中使用 `TracePrint` 查看实时输出
-- 直接读取上述文件内容
+**示例**：
+```
+/sdcard/guardian/guardian_log_20250303_091245.txt
+```
+
+**说明**：
+- 每次启动守护都会生成新的日志文件（按时间命名）
+- 所有运行日志写入该文件
+- 如需清理旧日志，手动删除 /sdcard/guardian/ 目录下的文件即可
 
 ## 🔒 防重复启动机制
 
@@ -126,11 +132,11 @@ local CONFIG = {
     HEARTBEAT_TIMEOUT = 15000,      -- 超时时间 15秒
     
     -- 锁文件配置
-    LOCK_FILE = "/sdcard/按键精灵/guardian.lock",
+    LOCK_FILE = "/sdcard/guardian/guardian.lock",
     
-    -- 日志配置
-    LOG_DIR = "/sdcard/按键精灵/日志/",
-    LOG_FILE = "/sdcard/按键精灵/日志/guardian_log.txt",
+    -- 日志配置 (按时间命名)
+    LOG_DIR = "/sdcard/guardian/",
+    LOG_PREFIX = "guardian_log_",
     
     -- 重启配置
     RESTART_DELAY = 3000,
