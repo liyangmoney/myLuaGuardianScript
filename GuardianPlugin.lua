@@ -159,7 +159,7 @@ local function generateScript(scriptName)
 end
 
 function QMPlugin.Test()
-    return "GuardianPlugin v4.4.0 OK"
+    return "GuardianPlugin v4.5.0 OK"
 end
 
 function QMPlugin.SendHeartbeat()
@@ -231,5 +231,52 @@ function QMPlugin.GetStatus()
         return "运行中 PID:" .. pid
     else
         return "未运行"
+    end
+end
+
+-- 停止所有GuardianShell进程（清理残留）
+function QMPlugin.StopAllGuardian()
+    local result = ""
+    local count = 0
+    
+    -- 方法1: 通过PID文件停止
+    if fileExists(PID_FILE) then
+        local pid = readFile(PID_FILE)
+        pid = pid:gsub("%s+", "")
+        if pid ~= "" then
+            exec(string.format("kill -TERM %s 2>/dev/null", pid))
+            local startTime = os.time()
+            while os.time() - startTime < 2 do end
+            exec(string.format("kill -9 %s 2>/dev/null", pid))
+            result = result .. "已停止PID:" .. pid .. "\n"
+            count = count + 1
+        end
+        os.remove(PID_FILE)
+    end
+    
+    -- 方法2: 通过ps查找并停止所有GuardianShell进程
+    local tmpfile = "/sdcard/guardian/.stop_check"
+    exec(string.format("ps | grep GuardianShell.sh | grep -v grep > %s", tmpfile))
+    
+    if fileExists(tmpfile) then
+        local content = readFile(tmpfile)
+        for line in content:gmatch("[^\r\n]+") do
+            local pid = line:match("^%s*(%d+)")
+            if pid then
+                exec(string.format("kill -9 %s 2>/dev/null", pid))
+                result = result .. "已停止PID:" .. pid .. "\n"
+                count = count + 1
+            end
+        end
+        os.remove(tmpfile)
+    end
+    
+    -- 清理临时文件
+    os.remove("/sdcard/guardian/.check")
+    
+    if count > 0 then
+        return "已停止 " .. count .. " 个进程:\n" .. result
+    else
+        return "未发现运行中的守护进程"
     end
 end
