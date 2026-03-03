@@ -207,9 +207,9 @@ function QMPlugin.SetMainScript(scriptName)
     -- 启动Shell
     exec(string.format("sh %s > /dev/null 2>&1 &", SHELL_SCRIPT))
     
-    -- 等待启动
-    for i = 1, 5 do
-        Delay(1000)
+    -- 等待启动（使用循环代替Delay）
+    local startTime = os.time()
+    while os.time() - startTime < 5 do
         if isRunning() then
             return "主脚本:" .. scriptName .. " | 守护已启动"
         end
@@ -229,8 +229,9 @@ function QMPlugin.StartGuardian()
     
     exec(string.format("sh %s > /dev/null 2>&1 &", SHELL_SCRIPT))
     
-    for i = 1, 3 do
-        Delay(1000)
+    -- 等待启动
+    local startTime = os.time()
+    while os.time() - startTime < 3 do
         if isRunning() then
             return "守护已启动"
         end
@@ -249,7 +250,9 @@ function QMPlugin.StopGuardian()
     
     if pid ~= "" then
         exec(string.format("kill -TERM %s 2>/dev/null", pid))
-        Delay(2000)
+        -- 等待2秒
+        local startTime = os.time()
+        while os.time() - startTime < 2 do end
         exec(string.format("kill -9 %s 2>/dev/null", pid))
     end
     
