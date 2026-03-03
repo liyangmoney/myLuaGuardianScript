@@ -1,26 +1,20 @@
 -- ============================================
 -- 按键精灵移动版 - Shell守护启动插件
 -- 文件名: GuardianPlugin.lua
--- 版本: 4.3.0
--- 描述: 使用os.execute执行shell命令
--- 
--- 注意：按键精灵插件中Sys/File对象不可用，使用os.execute
+-- 版本: 4.4.0
+-- 描述: 使用纯Lua函数，修复日志和脚本启动问题
 -- ============================================
 
--- 定义插件命名空间
 QMPlugin = {}
 
--- 配置
 local SHELL_SCRIPT = "/sdcard/guardian/GuardianShell.sh"
 local PID_FILE = "/sdcard/guardian/guardian_shell.pid"
 local HEARTBEAT_FILE = "/sdcard/guardian/heartbeat.txt"
 
--- 简单的shell执行函数
 local function exec(cmd)
     return os.execute(cmd)
 end
 
--- 检查文件是否存在
 local function fileExists(path)
     local f = io.open(path, "r")
     if f then
@@ -30,7 +24,6 @@ local function fileExists(path)
     return false
 end
 
--- 写入文件
 local function writeFile(path, content)
     local f = io.open(path, "w")
     if f then
@@ -41,7 +34,6 @@ local function writeFile(path, content)
     return false
 end
 
--- 读取文件
 local function readFile(path)
     local f = io.open(path, "r")
     if f then
@@ -52,20 +44,15 @@ local function readFile(path)
     return ""
 end
 
--- 检查Shell守护是否运行
 local function isRunning()
     if not fileExists(PID_FILE) then
         return false
     end
-    
     local pid = readFile(PID_FILE)
     pid = pid:gsub("%s+", "")
-    
     if pid == "" then
         return false
     end
-    
-    -- 使用ps检查进程
     local tmpfile = "/sdcard/guardian/.check"
     exec(string.format("ps | grep %s | grep -v grep > %s", pid, tmpfile))
     local exists = fileExists(tmpfile)
@@ -75,124 +62,114 @@ local function isRunning()
     return exists
 end
 
--- 生成Shell脚本
 local function generateScript(scriptName)
-    local shellContent = "#!/system/bin/sh\n"
-        .. "# GuardianShell.sh (auto generated)\n"
+    -- 生成固定日志文件名
+    local logFileName = "shell_guardian_" .. os.date("%Y%m%d_%H%M%S") .. ".log"
+    
+    local shell = "#!/system/bin/sh\n"
         .. "HEARTBEAT_FILE=\"/sdcard/guardian/heartbeat.txt\"\n"
         .. "HEARTBEAT_INTERVAL=5\n"
         .. "HEARTBEAT_TIMEOUT=15\n"
         .. "RESTART_DELAY=3\n"
         .. "MAX_RESTART=10\n"
         .. "RESTART_RESET_TIME=60\n"
-        .. "LOG_DIR=\"/sdcard/guardian\"\n"
+        .. "LOG_FILE=\"/sdcard/guardian/" .. logFileName .. "\"\n"
         .. "PID_FILE=\"/sdcard/guardian/guardian_shell.pid\"\n"
-        .. "MAIN_SCRIPT_NAME=\"" .. scriptName .. "\"\n"
+        .. "MAIN_SCRIPT=\"" .. scriptName .. "\"\n"
         .. "\n"
         .. "log() {\n"
-        .. "    local level=\"$1\"\n"
-        .. "    local msg=\"$2\"\n"
-        .. "    local time_str=$(date +\"%H:%M:%S\")\n"
-        .. "    echo \"[${time_str}] [${level}] ${msg}\" >> \"$LOG_DIR/shell_guardian_$(date +%Y%m%d_%H%M%S).log\"\n"
+        .. "  echo \"[$(date +'%%H:%%M:%%S')] [$1] $2\" >> \"$LOG_FILE\"\n"
         .. "}\n"
         .. "\n"
         .. "check_running() {\n"
-        .. "    if [ -f \"$PID_FILE\" ]; then\n"
-        .. "        local old_pid=$(cat \"$PID_FILE\")\n"
-        .. "        if [ -n \"$old_pid\" ] && kill -0 \"$old_pid\" 2>/dev/null; then\n"
-        .. "            return 0\n"
-        .. "        fi\n"
-        .. "        rm -f \"$PID_FILE\"\n"
+        .. "  if [ -f \"$PID_FILE\" ]; then\n"
+        .. "    local pid=$(cat \"$PID_FILE\")\n"
+        .. "    if [ -n \"$pid\" ] && kill -0 \"$pid\" 2>/dev/null; then\n"
+        .. "      return 0\n"
         .. "    fi\n"
-        .. "    return 1\n"
-        .. "}\n"
-        .. "\n"
-        .. "update_pid() {\n"
-        .. "    echo $$ > \"$PID_FILE\"\n"
-        .. "}\n"
-        .. "\n"
-        .. "clear_pid() {\n"
         .. "    rm -f \"$PID_FILE\"\n"
+        .. "  fi\n"
+        .. "  return 1\n"
         .. "}\n"
         .. "\n"
-        .. "read_heartbeat() {\n"
+        .. "start_script() {\n"
+        .. "  log INFO \"Starting: $MAIN_SCRIPT\"\n"
+        .. "  # Use input tap to start script (simulate user action)\n"
+        .. "  # Or use am broadcast if Anjian supports it\n"
+        .. "  am startservice -a com.cyjh.gundam.ACTION_RUN_SCRIPT --es name \"$MAIN_SCRIPT\" 2>/dev/null\n"
+        .. "  sleep 2\n"
+        .. "}\n"
+        .. "\n"
+        .. "main() {\n"
+        .. "  if check_running; then exit 1; fi\n"
+        .. "  echo $$ > \"$PID_FILE\"\n"
+        .. "  log INFO \"Guardian started\"\n"
+        .. "  log INFO \"Log: $LOG_FILE\"\n"
+        .. "  log INFO \"Script: $MAIN_SCRIPT\"\n"
+        .. "  \n"
+        .. "  start_script\n"
+        .. "  \n"
+        .. "  local last_hb=0\n"
+        .. "  local restart_cnt=0\n"
+        .. "  local last_restart=$(date +%%s)\n"
+        .. "  \n"
+        .. "  while true; do\n"
+        .. "    local hb=0\n"
         .. "    if [ -f \"$HEARTBEAT_FILE\" ]; then\n"
-        .. "        cat \"$HEARTBEAT_FILE\"\n"
-        .. "    else\n"
-        .. "        echo 0\n"
+        .. "      hb=$(cat \"$HEARTBEAT_FILE\")\n"
         .. "    fi\n"
-        .. "}\n"
-        .. "\n"
-        .. "get_time() {\n"
-        .. "    date +%s\n"
-        .. "}\n"
-        .. "\n"
-        .. "start_main() {\n"
-        .. "    log INFO \"Start: $MAIN_SCRIPT_NAME\"\n"
-        .. "    mkdir -p \"$LOG_DIR\"\n"
-        .. "    echo $(get_time) > \"$HEARTBEAT_FILE\"\n"
-        .. "    am start -a android.intent.action.MAIN -n com.cyjh.gundam/.activity.MainActivity 2>/dev/null\n"
-        .. "    sleep 2\n"
-        .. "}\n"
-        .. "\n"
-        .. "main_loop() {\n"
-        .. "    if check_running; then exit 1; fi\n"
-        .. "    update_pid\n"
-        .. "    mkdir -p \"$LOG_DIR\"\n"
-        .. "    log INFO \"Guardian started\"\n"
-        .. "    start_main\n"
-        .. "    local last_heartbeat=0\n"
-        .. "    local restart_count=0\n"
-        .. "    local last_restart_time=$(get_time)\n"
-        .. "    while true; do\n"
-        .. "        local hb=$(read_heartbeat)\n"
-        .. "        local now=$(get_time)\n"
-        .. "        if [ \"$hb\" != \"0\" ] && [ -n \"$hb\" ]; then\n"
-        .. "            if [ \"$hb\" -gt \"$last_heartbeat\" ]; then\n"
-        .. "                last_heartbeat=$hb\n"
-        .. "            fi\n"
-        .. "            local elapsed=$((now - last_heartbeat))\n"
-        .. "            if [ \"$elapsed\" -gt \"$HEARTBEAT_TIMEOUT\" ]; then\n"
-        .. "                log WARN \"Timeout: ${elapsed}s\"\n"
-        .. "                restart_count=$((restart_count + 1))\n"
-        .. "                if [ \"$restart_count\" -gt \"$MAX_RESTART\" ]; then\n"
-        .. "                    log FATAL \"Max restart reached\"\n"
-        .. "                    break\n"
-        .. "                fi\n"
-        .. "                sleep \"$RESTART_DELAY\"\n"
-        .. "                start_main\n"
-        .. "            fi\n"
+        .. "    local now=$(date +%%s)\n"
+        .. "    \n"
+        .. "    if [ \"$hb\" != \"0\" ] && [ -n \"$hb\" ]; then\n"
+        .. "      if [ \"$hb\" -gt \"$last_hb\" ]; then\n"
+        .. "        last_hb=$hb\n"
+        .. "      fi\n"
+        .. "      local elapsed=$((now - last_hb))\n"
+        .. "      if [ \"$elapsed\" -gt \"$HEARTBEAT_TIMEOUT\" ]; then\n"
+        .. "        log WARN \"Timeout: ${elapsed}s\"\n"
+        .. "        local since_restart=$((now - last_restart))\n"
+        .. "        if [ \"$since_restart\" -gt \"$RESTART_RESET_TIME\" ]; then\n"
+        .. "          restart_cnt=0\n"
         .. "        fi\n"
-        .. "        touch \"$PID_FILE\"\n"
-        .. "        sleep \"$HEARTBEAT_INTERVAL\"\n"
-        .. "    done\n"
-        .. "    clear_pid\n"
+        .. "        restart_cnt=$((restart_cnt + 1))\n"
+        .. "        last_restart=$now\n"
+        .. "        if [ \"$restart_cnt\" -gt \"$MAX_RESTART\" ]; then\n"
+        .. "          log FATAL \"Max restart\"\n"
+        .. "          break\n"
+        .. "        fi\n"
+        .. "        sleep \"$RESTART_DELAY\"\n"
+        .. "        echo 0 > \"$HEARTBEAT_FILE\"\n"
+        .. "        start_script\n"
+        .. "      fi\n"
+        .. "    fi\n"
+        .. "    \n"
+        .. "    touch \"$PID_FILE\"\n"
+        .. "    sleep \"$HEARTBEAT_INTERVAL\"\n"
+        .. "  done\n"
+        .. "  \n"
+        .. "  rm -f \"$PID_FILE\"\n"
+        .. "  log INFO \"Guardian stopped\"\n"
         .. "}\n"
-        .. "trap 'clear_pid; exit 0' TERM INT\n"
-        .. "main_loop\n"
+        .. "\n"
+        .. "trap 'rm -f \"$PID_FILE\"; exit 0' TERM INT\n"
+        .. "main\n"
     
-    -- 创建目录
     exec("mkdir -p /sdcard/guardian")
-    
-    -- 写入脚本
-    return writeFile(SHELL_SCRIPT, shellContent)
+    return writeFile(SHELL_SCRIPT, shell)
 end
 
--- ==================== 插件导出函数 ====================
-
 function QMPlugin.Test()
-    return "GuardianPlugin v4.3.0 OK"
+    return "GuardianPlugin v4.4.0 OK"
 end
 
 function QMPlugin.SendHeartbeat()
-    writeFile(HEARTBEAT_FILE, tostring(TickCount()))
+    writeFile(HEARTBEAT_FILE, tostring(os.time()))
     return "OK"
 end
 
 function QMPlugin.SetMainScript(scriptName)
     if isRunning() then
-        generateScript(scriptName)
-        return "已设置:" .. scriptName .. " (运行中)"
+        return "守护运行中，请先停止"
     end
     
     local ok, err = pcall(function()
@@ -203,10 +180,8 @@ function QMPlugin.SetMainScript(scriptName)
         return "错误:" .. tostring(err)
     end
     
-    -- 启动Shell
     exec(string.format("sh %s > /dev/null 2>&1 &", SHELL_SCRIPT))
     
-    -- 等待启动（使用循环代替Delay）
     local startTime = os.time()
     while os.time() - startTime < 5 do
         if isRunning() then
@@ -221,21 +196,16 @@ function QMPlugin.StartGuardian()
     if isRunning() then
         return "守护已在运行"
     end
-    
     if not fileExists(SHELL_SCRIPT) then
         return "错误:脚本不存在"
     end
-    
     exec(string.format("sh %s > /dev/null 2>&1 &", SHELL_SCRIPT))
-    
-    -- 等待启动
     local startTime = os.time()
     while os.time() - startTime < 3 do
         if isRunning() then
             return "守护已启动"
         end
     end
-    
     return "启动失败"
 end
 
@@ -243,18 +213,14 @@ function QMPlugin.StopGuardian()
     if not fileExists(PID_FILE) then
         return "守护未运行"
     end
-    
     local pid = readFile(PID_FILE)
     pid = pid:gsub("%s+", "")
-    
     if pid ~= "" then
         exec(string.format("kill -TERM %s 2>/dev/null", pid))
-        -- 等待2秒
         local startTime = os.time()
         while os.time() - startTime < 2 do end
         exec(string.format("kill -9 %s 2>/dev/null", pid))
     end
-    
     os.remove(PID_FILE)
     return "守护已停止"
 end
