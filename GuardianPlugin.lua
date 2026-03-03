@@ -141,6 +141,7 @@ function QMPlugin.SetMainScript(pkgName)
         return "守护已在运行"
     end
     
+    -- 强制重新生成脚本（确保是最新版本）
     local ok, err = pcall(function()
         generateScript(pkgName)
     end)
@@ -149,21 +150,29 @@ function QMPlugin.SetMainScript(pkgName)
         return "错误:" .. tostring(err)
     end
     
+    -- 启动
     exec(string.format("sh %s > /dev/null 2>&1 &", SHELL_SCRIPT))
     
     local t = os.time()
     while os.time() - t < 5 do
         if isRunning() then
-            return "包名:" .. pkgName .. " | 守护已启动"
+            return "包名:" .. pkgName .. " | 守护已启动(脚本已更新)"
         end
     end
     
     return "启动失败"
 end
 
-function QMPlugin.StartGuardian()
+function QMPlugin.StartGuardian(pkgName)
     if isRunning() then return "守护已在运行" end
-    if not fileExists(SHELL_SCRIPT) then return "脚本不存在" end
+    
+    -- 如果传了包名，重新生成脚本
+    if pkgName then
+        generateScript(pkgName)
+    elseif not fileExists(SHELL_SCRIPT) then
+        return "脚本不存在，请先SetMainScript"
+    end
+    
     exec(string.format("sh %s > /dev/null 2>&1 &", SHELL_SCRIPT))
     local t = os.time()
     while os.time() - t < 3 do
