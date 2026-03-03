@@ -57,23 +57,35 @@ while true do
 end
 ```
 
-#### 3. 启动Shell守护
+#### 3. 启动Shell守护（一行代码）
 
-**方式1：使用插件启动（推荐）**
+**新功能：SetMainScript 自动完成一切**
+
 ```lua
 Import "GuardianPlugin"
 
--- 设置要守护的主脚本名称
-GuardianPlugin.SetMainScript("你的主脚本名称")
-
--- 启动Shell守护（独立进程）
-local result = GuardianPlugin.StartGuardian()
-TracePrint(result)  -- Shell守护已启动
+-- 只需调用 SetMainScript，它会自动：
+-- 1. 检测 Shell 守护是否已运行
+-- 2. 如未运行，自动生成 GuardianShell.sh
+-- 3. 自动启动 Shell 守护进程
+local result = GuardianPlugin.SetMainScript("你的主脚本名称")
+TracePrint(result)  -- 输出: 主脚本:XXX | Shell守护已自动生成并启动
 ```
 
-**方式2：直接启动Shell脚本**
+**传统方式（如需单独控制）**
+```lua
+Import "GuardianPlugin"
+
+-- 手动设置主脚本（Shell守护必须已存在）
+GuardianPlugin.SetMainScript("你的主脚本名称")
+
+-- 手动启动 Shell 守护
+GuardianPlugin.StartGuardian()
+```
+
+**方式3：直接启动Shell脚本（无需插件）**
 ```bash
-# 在终端或脚本中执行
+# 在终端执行
 sh /sdcard/guardian/GuardianShell.sh
 ```
 
@@ -183,34 +195,36 @@ while true do
 end
 ```
 
+### 设置主脚本并自动启动守护（推荐）
+
+```lua
+-- 一行代码完成所有操作：
+-- 1. 检测 Shell 守护是否已运行
+-- 2. 如未运行，自动生成 GuardianShell.sh
+-- 3. 自动启动 Shell 守护
+local result = GuardianPlugin.SetMainScript("你的主脚本名称")
+TracePrint(result)
+-- 输出示例: "主脚本:你的主脚本名称 | Shell守护已自动生成并启动"
+```
+
 ### 停止守护
 
 ```lua
 GuardianPlugin.StopGuardian()
 ```
 
-### 强制重置（异常情况）
-
-```lua
--- 如果守护异常退出导致锁未释放，使用此函数强制重置
-GuardianPlugin.ResetGuardian()
-```
-
 ### 获取守护状态
 
 ```lua
 local status = GuardianPlugin.GetStatus()
-TracePrint(status)  -- 输出: 状态:运行正常 运行:5分32秒 重启:0次
+TracePrint(status)  -- 输出: Shell守护运行中 PID:12345
 ```
 
-### 配置守护参数
+### 发送心跳（主脚本中调用）
 
 ```lua
--- 设置要守护的主脚本名称（必须在按键精灵中有此脚本）
-GuardianPlugin.SetMainScript("你的主脚本名称")
-
--- 设置心跳超时时间（毫秒）
-GuardianPlugin.SetTimeout(15000)  -- 15秒
+-- 在主脚本的主循环中定时发送
+GuardianPlugin.SendHeartbeat()
 ```
 
 ## ⚙️ 插件配置
@@ -246,38 +260,64 @@ local CONFIG = {
 
 | 函数名 | 参数 | 返回值 | 说明 |
 |--------|------|--------|------|
-| `StartGuardian()` | 无 | 字符串 | 启动守护（自动防重复） |
-| `StopGuardian()` | 无 | 字符串 | 停止守护并释放锁 |
-| `ResetGuardian()` | 无 | 字符串 | 强制重置锁状态 |
-| `SendHeartbeat()` | 无 | 字符串 | 发送心跳 |
-| `GetStatus()` | 无 | 字符串 | 获取状态 |
-| `SetMainScript(name)` | 脚本名称 | 字符串 | 设置主脚本 |
-| `SetTimeout(ms)` | 毫秒 | 字符串 | 设置超时 |
-| `Test()` | 无 | 字符串 | 测试插件 |
+| `SetMainScript(name)` | 脚本名称 | 字符串 | **推荐** 设置主脚本并自动启动Shell守护（如未运行则自动生成） |
+| `StartGuardian()` | 无 | 字符串 | 手动启动守护（需Shell脚本已存在） |
+| `StopGuardian()` | 无 | 字符串 | 停止Shell守护 |
+| `SendHeartbeat()` | 无 | 字符串 | 发送心跳（主脚本调用） |
+| `GetStatus()` | 无 | 字符串 | 获取Shell守护运行状态 |
+| `Test()` | 无 | 字符串 | 测试插件加载 |
 
 ## 📝 完整示例
 
-### 守护启动脚本
+### 方式1：一行代码启动（推荐）
+
 ```lua
 Import "GuardianPlugin"
 
--- 测试插件是否加载
-TracePrint(GuardianPlugin.Test())
+-- 测试插件
+TracePrint(GuardianPlugin.Test())  -- GuardianPlugin v4.1.0 (Shell版) 加载成功
 
--- 配置要守护的脚本
+-- 一行代码：设置主脚本并自动启动Shell守护
+-- 如Shell脚本不存在会自动生成，如守护未运行会自动启动
+local result = GuardianPlugin.SetMainScript("我的主脚本")
+TracePrint(result)
+-- 输出: "主脚本:我的主脚本 | Shell守护已自动生成并启动"
+```
+
+### 方式2：手动分步启动
+
+```lua
+Import "GuardianPlugin"
+
+-- 手动设置主脚本（Shell脚本必须已存在）
 GuardianPlugin.SetMainScript("我的主脚本")
-GuardianPlugin.SetTimeout(20000)  -- 20秒超时
 
--- 启动守护（自动防重复启动）
+-- 手动启动守护
 local result = GuardianPlugin.StartGuardian()
 TracePrint(result)
 ```
 
 ### 被守护的主脚本
+
 ```lua
 Import "GuardianPlugin"
 
 function Main()
+    TracePrint("主脚本启动")
+    
+    while true do
+        -- 发送心跳
+        GuardianPlugin.SendHeartbeat()
+        
+        -- 执行业务逻辑
+        -- ...
+        
+        Delay(3000)
+    end
+end
+
+Main()
+```
     TracePrint("主脚本启动")
     
     while true do
