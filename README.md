@@ -9,6 +9,31 @@
 | `GuardianPlugin.lua` | **守护插件** - 放入 Plugin 文件夹 |
 | `MainScript.lua` | **主脚本示例** - 需要配合守护插件使用 |
 
+## 📂 日志位置
+
+日志文件保存在：
+```
+/sdcard/按键精灵/日志/guardian_log.txt
+```
+
+每次启动会追加写入，可通过以下方式查看：
+- 在按键精灵中使用 `TracePrint` 查看实时输出
+- 直接读取上述文件内容
+
+## 🔒 防重复启动机制
+
+插件使用**文件锁**机制防止重复启动：
+
+1. **启动检查**: `StartGuardian()` 会先检查 `/sdcard/按键精灵/guardian.lock` 文件
+2. **锁超时**: 如果锁文件存在且超过60秒未更新，认为已过期，可以抢占
+3. **锁更新**: 守护进程每60秒更新锁文件时间戳
+4. **自动释放**: 停止守护时自动删除锁文件
+
+**强制重置**: 如果发生异常导致锁未释放，可使用：
+```lua
+GuardianPlugin.ResetGuardian()  -- 强制清理锁状态
+```
+
 ## 🚀 安装步骤
 
 ### 1. 放置插件文件
@@ -22,32 +47,6 @@
 ### 2. 刷新插件
 
 在按键精灵左侧的【全部命令】中，右键点击【插件命令】，选择【刷新】。
-
-## 📝 日志位置
-
-日志文件位置：
-```
-/sdcard/按键精灵/guardian_log.txt
-```
-
-**说明**：
-- 所有运行日志都写入此文件
-- 每次启动守护都会追加到文件末尾
-- 如需清空日志，手动删除此文件即可
-
-## 🔒 防重复启动机制
-
-插件内置双重防重复启动保护：
-
-### 1. 内存检查
-如果当前脚本内存中 `g_running = true`，则拒绝重复启动。
-
-### 2. 文件锁
-创建锁文件 `/sdcard/按键精灵/guardian.lock`：
-- 启动时检查锁文件是否存在
-- 如果存在且未过期（2分钟内），拒绝启动
-- 如果锁过期（超过2分钟），自动清除并允许启动
-- 停止守护时自动清除锁文件
 
 ### 3. 在主脚本中导入插件
 
@@ -63,8 +62,9 @@ Import "GuardianPlugin"
 ```lua
 Import "GuardianPlugin"
 
--- 启动守护（在独立线程中运行）
-GuardianPlugin.StartGuardian()
+-- 启动守护（会自动检查是否已运行）
+local result = GuardianPlugin.StartGuardian()
+TracePrint(result)  -- 输出: 守护已启动 或 守护已在运行中
 ```
 
 ### 在主脚本中发送心跳
@@ -84,6 +84,13 @@ end
 
 ```lua
 GuardianPlugin.StopGuardian()
+```
+
+### 强制重置（异常情况）
+
+```lua
+-- 如果守护异常退出导致锁未释放，使用此函数强制重置
+GuardianPlugin.ResetGuardian()
 ```
 
 ### 获取守护状态
@@ -110,21 +117,25 @@ GuardianPlugin.SetTimeout(15000)  -- 15秒
 ```lua
 local CONFIG = {
     -- 主脚本配置
-    MAIN_SCRIPT_NAME = "MainScript",      -- 默认主脚本名称
+    MAIN_SCRIPT_NAME = "MainScript",
     MAIN_SCRIPT_PATH = "/sdcard/按键精灵/脚本/MainScript.lua",
     
     -- 心跳配置
     HEARTBEAT_FILE = "/sdcard/按键精灵/heartbeat.txt",
-    HEARTBEAT_INTERVAL = 5000,            -- 检测间隔 5秒
-    HEARTBEAT_TIMEOUT = 15000,            -- 超时时间 15秒
+    HEARTBEAT_INTERVAL = 5000,      -- 检测间隔 5秒
+    HEARTBEAT_TIMEOUT = 15000,      -- 超时时间 15秒
     
-    -- 重启配置
-    RESTART_DELAY = 3000,                 -- 重启延迟 3秒
-    MAX_RESTART_ATTEMPTS = 10,            -- 最大重启次数
-    RESTART_RESET_TIME = 60000,           -- 重启计数重置时间 1分钟
+    -- 锁文件配置
+    LOCK_FILE = "/sdcard/按键精灵/guardian.lock",
     
     -- 日志配置
-    LOG_FILE = "/sdcard/按键精灵/guardian_log.txt",
+    LOG_DIR = "/sdcard/按键精灵/日志/",
+    LOG_FILE = "/sdcard/按键精灵/日志/guardian_log.txt",
+    
+    -- 重启配置
+    RESTART_DELAY = 3000,
+    MAX_RESTART_ATTEMPTS = 10,
+    RESTART_RESET_TIME = 60000,
 }
 ```
 
@@ -132,26 +143,18 @@ local CONFIG = {
 
 | 函数名 | 参数 | 返回值 | 说明 |
 |--------|------|--------|------|
-| `StartGuardian()` | 无 | 字符串 | 启动守护 |
-| `StopGuardian()` | 无 | 字符串 | 停止守护 |
+| `StartGuardian()` | 无 | 字符串 | 启动守护（自动防重复） |
+| `StopGuardian()` | 无 | 字符串 | 停止守护并释放锁 |
+| `ResetGuardian()` | 无 | 字符串 | 强制重置锁状态 |
 | `SendHeartbeat()` | 无 | 字符串 | 发送心跳 |
 | `GetStatus()` | 无 | 字符串 | 获取状态 |
 | `SetMainScript(name)` | 脚本名称 | 字符串 | 设置主脚本 |
 | `SetTimeout(ms)` | 毫秒 | 字符串 | 设置超时 |
 | `Test()` | 无 | 字符串 | 测试插件 |
 
-## 📜 日志查看
-
-日志文件位置：
-```
-/sdcard/按键精灵/guardian_log.txt
-```
-
-在按键精灵中使用 `TracePrint` 查看实时输出。
-
 ## 📝 完整示例
 
-### 守护脚本
+### 守护启动脚本
 ```lua
 Import "GuardianPlugin"
 
@@ -162,8 +165,9 @@ TracePrint(GuardianPlugin.Test())
 GuardianPlugin.SetMainScript("我的主脚本")
 GuardianPlugin.SetTimeout(20000)  -- 20秒超时
 
--- 启动守护
-TracePrint(GuardianPlugin.StartGuardian())
+-- 启动守护（自动防重复启动）
+local result = GuardianPlugin.StartGuardian()
+TracePrint(result)
 ```
 
 ### 被守护的主脚本
@@ -189,31 +193,21 @@ Main()
 
 ## ⚠️ 注意事项
 
-1. **存储权限**: 需要存储权限来读写心跳文件和日志
+1. **存储权限**: 需要存储权限来读写心跳文件、日志和锁文件
 2. **脚本名称**: `SetMainScript` 设置的名称必须与按键精灵中的脚本名称一致
 3. **心跳间隔**: 主脚本的心跳间隔应小于 `HEARTBEAT_TIMEOUT`
-4. **插件路径**: 确保插件文件放在正确的 Plugin 文件夹中
-
-## 🔧 故障排查
-
-### Q: 插件命令不显示？
-A: 确保 GuardianPlugin.lua 放在 Plugin 文件夹，然后右键【插件命令】→【刷新】
-
-### Q: 主脚本不启动？
-A: 检查 `SetMainScript` 设置的名称是否与按键精灵中的脚本名称完全一致
-
-### Q: 频繁重启？
-A: 检查主脚本是否正确调用 `SendHeartbeat()`，或调大超时时间
-
-### Q: 无日志输出？
-A: 检查是否有存储权限，或手动创建日志目录
+4. **锁清理**: 正常情况下锁会自动清理，异常时可使用 `ResetGuardian()`
 
 ## 📜 更新日志
+
+### v3.2.0
+- 添加文件锁机制，防止重复启动守护进程
+- 添加 `ResetGuardian()` 强制重置函数
+- 优化日志路径，自动创建日志目录
 
 ### v3.1.0
 - 适配按键精灵移动版插件系统
 - 使用 `QMPlugin` 命名空间导出函数
-- 添加 `SetMainScript` 和 `SetTimeout` 配置接口
 
 ### v3.0.0
 - 无界面版本
