@@ -166,17 +166,27 @@ end
 function QMPlugin.StartGuardian(pkgName)
     if isRunning() then return "守护已在运行" end
     
-    -- 如果传了包名，重新生成脚本
-    if pkgName then
-        generateScript(pkgName)
-    elseif not fileExists(SHELL_SCRIPT) then
-        return "脚本不存在，请先SetMainScript"
+    -- 确定包名
+    local name = pkgName
+    if not name then
+        -- 尝试从现有脚本读取包名
+        if fileExists(SHELL_SCRIPT) then
+            local content = readFile(SHELL_SCRIPT)
+            name = content:match('PKG="([^"]+)"')
+        end
     end
+    
+    if not name then
+        return "请先SetMainScript或在StartGuardian中传入包名"
+    end
+    
+    -- 强制重新生成脚本
+    generateScript(name)
     
     exec(string.format("sh %s > /dev/null 2>&1 &", SHELL_SCRIPT))
     local t = os.time()
     while os.time() - t < 3 do
-        if isRunning() then return "守护已启动" end
+        if isRunning() then return "守护已启动(脚本已更新)" end
     end
     return "启动失败"
 end
