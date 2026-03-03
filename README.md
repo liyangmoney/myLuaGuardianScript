@@ -1,82 +1,112 @@
 # 按键精灵移动版 - 进程守护
 
-提供两种守护方案：
-1. **插件版** (`GuardianPlugin.lua`) - 作为插件导入，与主脚本同生命周期
-2. **独立脚本版** (`GuardianRunner.lua`) - 作为独立脚本运行，真正独立于主脚本
+提供三种守护方案：
+1. **Shell独立进程版** ⭐⭐⭐ **强烈推荐** - Shell脚本作为独立进程运行
+2. **独立脚本版** (`GuardianRunner.lua`) - Lua脚本独立运行
+3. **插件版** (`GuardianPlugin.lua`) - 作为插件导入
 
 ## 📁 文件说明
 
 | 文件 | 说明 |
 |------|------|
-| `GuardianRunner.lua` | **独立守护脚本** ⭐ 推荐 - 独立于主脚本运行 |
-| `GuardianPlugin.lua` | **守护插件** - 作为插件导入使用 |
-| `Heartbeat.lua` | **心跳模块** - 供主脚本调用发送心跳 |
-| `MainScript.lua` | **主脚本示例** - 配合守护使用 |
+| `GuardianShell.sh` | **Shell守护脚本** ⭐⭐⭐ **推荐** - 独立进程，真正独立于按键精灵 |
+| `GuardianPlugin.lua` | **启动插件** - 用于启动Shell守护 |
+| `GuardianRunner.lua` | Lua独立守护脚本 |
+| `Heartbeat.lua` | 心跳模块 |
+| `MainScript.lua` | 主脚本示例 |
 
 ---
 
-## 🚀 推荐方案：独立守护脚本
+## 🚀 强烈推荐方案：Shell独立进程守护
 
-### 方案对比
+### 方案优势
 
-| 特性 | 独立脚本版 | 插件版 |
-|------|-----------|--------|
-| 运行方式 | 单独运行 GuardianRunner.lua | 作为主脚本的一部分 |
-| 生命周期 | 独立于主脚本 | 与主脚本绑定 |
-| 主脚本退出后 | 继续运行并重启主脚本 | 随主脚本停止 |
-| 适用场景 | 需要持续守护的场景 | 临时守护需求 |
+| 特性 | Shell版 | Lua脚本版 | 插件版 |
+|------|---------|-----------|--------|
+| 进程独立性 | ⭐⭐⭐⭐⭐ 系统级独立进程 | ⭐⭐ 同APP内线程 | ⭐ 同脚本内 |
+| 按键精灵退出后 | ✅ 继续运行 | ❌ 停止 | ❌ 停止 |
+| 系统杀死后 | ❌ 停止（需配合其他工具） | ❌ 停止 | ❌ 停止 |
+| 资源占用 | 极低 | 低 | 最低 |
 
-### 独立守护脚本使用方法
+### Shell独立进程使用方法
 
 #### 1. 放置文件
 
 ```
-/按键精灵/脚本/
-├── GuardianRunner.lua  (守护脚本)
-├── Heartbeat.lua       (心跳模块)
-└── 你的主脚本.lua       (被守护的主脚本)
+/sdcard/guardian/
+├── GuardianShell.sh     (Shell守护脚本)
+├── heartbeat.txt        (心跳文件，自动创建)
+├── guardian_shell.pid   (PID文件，自动创建)
+└── shell_guardian_*.log (日志文件，自动创建)
+
+/按键精灵/Plugin/
+└── GuardianPlugin.lua   (启动插件)
 ```
 
 #### 2. 在主脚本中添加心跳
 
-**方式1**：使用 Heartbeat.lua 模块
 ```lua
--- 主脚本开头导入心跳模块
-require("Heartbeat")
+-- 主脚本开头导入插件
+Import "GuardianPlugin"
 
--- 主循环
+-- 主循环中定时发送心跳
 while true do
-    AutoHeartbeat()  -- 自动发送心跳
-    -- 你的业务代码...
-    Delay(100)
-end
-```
-
-**方式2**：手动发送心跳
-```lua
--- 主循环
-while true do
-    -- 发送心跳
-    File.Write("/sdcard/guardian/heartbeat.txt", tostring(TickCount()))
-    
+    GuardianPlugin.SendHeartbeat()  -- 发送心跳
     -- 你的业务代码...
     Delay(3000)
 end
 ```
 
-#### 3. 启动守护
+#### 3. 启动Shell守护
 
-**先运行 `GuardianRunner.lua`**，它会自动启动你的主脚本。
+**方式1：使用插件启动（推荐）**
+```lua
+Import "GuardianPlugin"
 
-如果主脚本崩溃或退出，守护会继续运行并自动重启主脚本。
+-- 设置要守护的主脚本名称
+GuardianPlugin.SetMainScript("你的主脚本名称")
+
+-- 启动Shell守护（独立进程）
+local result = GuardianPlugin.StartGuardian()
+TracePrint(result)  -- Shell守护已启动
+```
+
+**方式2：直接启动Shell脚本**
+```bash
+# 在终端或脚本中执行
+sh /sdcard/guardian/GuardianShell.sh
+```
 
 #### 4. 停止守护
 
-停止 `GuardianRunner.lua` 脚本即可。
+```lua
+Import "GuardianPlugin"
+GuardianPlugin.StopGuardian()
+```
 
 ---
 
 ## 📂 日志位置
+
+### Shell守护日志
+```
+/sdcard/guardian/shell_guardian_YYYYMMDD_HHMMSS.log
+```
+
+示例：
+```
+/sdcard/guardian/shell_guardian_20250303_091245.log
+```
+
+日志内容示例：
+```
+[09:12:45] [INFO] ========================================
+[09:12:45] [INFO] Shell守护脚本 v1.0.0 启动
+[09:12:45] [INFO] 目标脚本: MainScript
+[09:12:45] [INFO] ========================================
+[09:12:46] [INFO] 主脚本启动完成
+[09:13:46] [INFO] 状态:运行正常 运行:1分0秒 重启:0次
+```
 
 日志文件按启动时间命名，保存在：
 ```
