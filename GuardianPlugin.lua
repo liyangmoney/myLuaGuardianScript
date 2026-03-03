@@ -214,13 +214,14 @@ local function generateShellScript(scriptName)
     local timeStr = DateTime.Format("yyyy-MM-dd HH:mm:ss", Now())
     local content = string.format(SHELL_TEMPLATE, scriptName, timeStr, scriptName)
     
-    -- 确保目录存在
-    if not dir.Exist(CONFIG.LOG_DIR) then
-        dir.Create(CONFIG.LOG_DIR)
-    end
+    -- 使用shell命令创建目录（更可靠）
+    Sys.Execute("mkdir -p /sdcard/guardian")
     
     -- 写入Shell脚本
     File.Write(CONFIG.SHELL_SCRIPT, content)
+    
+    -- 给脚本添加执行权限
+    Sys.Execute("chmod +x " .. CONFIG.SHELL_SCRIPT)
     
     return true
 end
@@ -242,7 +243,7 @@ local function isShellRunning()
     local checkCmd = string.format("kill -0 %s 2>/dev/null && echo \"running\" || echo \"not running\"", pid)
     local result = Sys.Execute(checkCmd)
     
-    return string.find(result, "running") ~= nil
+    return string.find(result, pid) ~= nil
 end
 
 -- ==================== 插件导出函数 ====================
@@ -335,28 +336,44 @@ function QMPlugin.SetMainScript(scriptName)
     end
     
     -- 2. Shell未运行，自动生成Shell脚本
-    local success = generateShellScript(scriptName)
+    local success, err = pcall(function()
+        generateShellScript(scriptName)
+    end)
+    
     if not success then
-        return "错误: 生成Shell脚本失败"
+        return "错误: 生成Shell脚本失败 - " .. tostring(err)
     end
     
-    -- 3. 自动启动Shell守护
-    Delay(500)  -- 等待文件写入完成
+    -- 3. 等待文件写入完成
+    Delay(1000)
     
+    -- 4. 验证文件是否生成成功
+    if not File.Exist(CONFIG.SHELL_SCRIPT) then
+        return "错误: Shell脚本文件未生成"
+    end
+    
+    -- 5. 自动启动Shell守护
     local cmd = string.format("sh %s > /dev/null 2>&1 &", CONFIG.SHELL_SCRIPT)
     Sys.Execute(cmd)
     
-    Delay(1000)  -- 等待Shell启动
+    -- 6. 等待Shell启动
+    Delay(2000)
     
-    -- 4. 检查是否成功启动
+    -- 7. 检查是否成功启动
     if isShellRunning() then
         return "主脚本:" .. scriptName .. " | Shell守护已自动生成并启动"
     else
-        return "错误: Shell守护启动失败"
+        -- 再试一次
+        Delay(1000)
+        if isShellRunning() then
+            return "主脚本:" .. scriptName .. " | Shell守护已自动生成并启动"
+        else
+            return "错误: Shell守护启动失败，请检查日志"
+        end
     end
 end
 
 -- 测试插件是否加载成功 (导出函数)
 function QMPlugin.Test()
-    return "GuardianPlugin v4.1.0 (Shell版) 加载成功"
+    return "GuardianPlugin v4.1.1 (Shell版) 加载成功"
 end
