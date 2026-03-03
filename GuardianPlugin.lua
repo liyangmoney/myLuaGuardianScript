@@ -238,10 +238,9 @@ local function generateScript(scriptName)
     
     -- 逐行追加
     for _, line in ipairs(lines) do
-        -- 转义特殊字符
-        line = line:gsub("\"", "\\\"")
-        line = line:gsub("\$", "\\$")
-        local cmd = string.format("echo \"%s\" >> %s", line, SHELL_SCRIPT)
+        -- 转义双引号
+        line = line:gsub('"', '\\"')
+        local cmd = string.format('echo "%s" >> %s', line, SHELL_SCRIPT)
         exec(cmd)
     end
     
