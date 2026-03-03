@@ -79,6 +79,12 @@ local function generateScript(pkgName)
         .. "    log \"Heartbeat: $HB\"\n"
         .. "  fi\n"
         .. "  \n"
+        .. "  # Check exit signal (-999)\n"
+        .. "  if [ \"$HB\" = \"-999\" ]; then\n"
+        .. "    log \"Exit signal received (-999), stopping...\"\n"
+        .. "    break\n"
+        .. "  fi\n"
+        .. "  \n"
         .. "  # Calculate elapsed\n"
         .. "  if [ \"$LAST_HB\" -gt 0 ]; then\n"
         .. "    ELAPSED=$((NOW - LAST_HB))\n"
@@ -134,6 +140,12 @@ end
 function QMPlugin.SendHeartbeat()
     writeFile(HEARTBEAT_FILE, tostring(os.time()))
     return "OK"
+end
+
+-- 发送退出信号（-999）让守护进程优雅退出
+function QMPlugin.SendExitSignal()
+    writeFile(HEARTBEAT_FILE, "-999")
+    return "退出信号已发送"
 end
 
 function QMPlugin.SetMainScript(pkgName)
