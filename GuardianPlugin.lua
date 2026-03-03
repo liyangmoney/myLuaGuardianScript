@@ -1,17 +1,26 @@
 -- ============================================
 -- 按键精灵移动版 - 进程守护插件
--- 版本: 3.0.0
--- 描述: 无界面版进程守护，仅日志记录
+-- 文件名: GuardianPlugin.lua
+-- 版本: 3.1.0
+-- 描述: 无界面版进程守护插件
+-- 
+-- 使用方式:
+-- 1. 将此文件放入按键精灵安装目录的 Plugin 文件夹
+-- 2. 在脚本中使用: Import "GuardianPlugin"
+-- 3. 调用: GuardianPlugin.StartGuardian()
 -- ============================================
+
+-- 定义插件命名空间
+QMPlugin = {}
 
 -- ==================== 插件配置 ====================
 local CONFIG = {
     -- 主脚本配置
-    MAIN_SCRIPT_NAME = "主脚本",
-    MAIN_SCRIPT_PATH = "/sdcard/按键精灵/脚本/主脚本.lua",
+    MAIN_SCRIPT_NAME = "MainScript",
+    MAIN_SCRIPT_PATH = "/sdcard/按键精灵/脚本/MainScript.lua",
     
     -- 心跳配置
-    HEARTBEAT_FILE = "/sdcard/按键精灵/心跳/heartbeat.txt",
+    HEARTBEAT_FILE = "/sdcard/按键精灵/heartbeat.txt",
     HEARTBEAT_INTERVAL = 5000,      -- 检测间隔 5秒
     HEARTBEAT_TIMEOUT = 15000,      -- 超时时间 15秒
     
@@ -20,52 +29,33 @@ local CONFIG = {
     MAX_RESTART_ATTEMPTS = 10,      -- 最大重启次数
     RESTART_RESET_TIME = 60000,     -- 重启计数重置时间 1分钟
     
-    -- 日志配置 (使用按键精灵Log插件)
-    LOG_DIR = "/sdcard/按键精灵/日志/",
-    LOG_PREFIX = "guardian_",
+    -- 日志配置
+    LOG_FILE = "/sdcard/按键精灵/guardian_log.txt",
 }
 
 -- ==================== 全局变量 ====================
-local g_running = true
+local g_running = false
 local g_restartCount = 0
 local g_lastRestartTime = 0
 local g_lastHeartbeatTime = 0
-local g_status = "初始化"
-local g_startTime = TickCount()
-local g_logOpened = false
+local g_status = "停止"
+local g_startTime = 0
+local g_guardianThread = nil
 
--- ==================== 日志模块 (使用Log插件) ====================
+-- ==================== 日志函数 ====================
 
--- 初始化日志
-local function initLog()
-    -- 创建日志目录
-    dir.Create(CONFIG.LOG_DIR)
-    dir.Create(File.GetPath(CONFIG.HEARTBEAT_FILE))
+-- 写入日志 (使用文件方式，因为插件中TracePrint可能不可用)
+local function writeLog(level, msg)
+    local timeStr = DateTime.Format("HH:mm:ss", Now())
+    local line = string.format("[%s] [%s] %s\n", timeStr, level, msg)
     
-    -- 生成日志文件名
-    local dateStr = DateTime.Format("yyyyMMdd_HHmmss", Now())
-    local logPath = CONFIG.LOG_DIR .. CONFIG.LOG_PREFIX .. dateStr .. ".txt"
+    -- 追加写入日志文件
+    File.Append(CONFIG.LOG_FILE, line)
     
-    -- 使用Log插件打开日志
-    Log.Open(logPath)
-    g_logOpened = true
-    
-    -- 写入启动信息
-    TracePrint("=" .. string.rep("=", 40))
-    TracePrint("进程守护插件 v3.0 启动")
-    TracePrint("目标脚本: " .. CONFIG.MAIN_SCRIPT_NAME)
-    TracePrint("心跳文件: " .. CONFIG.HEARTBEAT_FILE)
-    TracePrint("超时设置: " .. CONFIG.HEARTBEAT_TIMEOUT .. "ms")
-    TracePrint("=" .. string.rep("=", 40))
-end
-
--- 关闭日志
-local function closeLog()
-    if g_logOpened then
-        TracePrint("进程守护插件停止")
-        Log.Close()
-        g_logOpened = false
-    end
+    -- 同时尝试使用 TracePrint
+    pcall(function()
+        LuaAuxLib.TracePrint(line)
+    end)
 end
 
 -- ==================== 工具函数 ====================
@@ -77,7 +67,7 @@ local function formatRuntime(ms)
     local hours = math.floor(mins / 60)
     
     if hours > 0 then
-        return string.format("%d小时%d分%d秒", hours, mins % 60, seconds % 60)
+        return string.format("%d小时%d分", hours, mins % 60)
     elseif mins > 0 then
         return string.format("%d分%d秒", mins, seconds % 60)
     else
@@ -123,12 +113,12 @@ local function checkMainScript()
         g_lastHeartbeatTime = heartbeatTime
     end
     
-    -- 计算超时 (使用TickCount差值)
+    -- 计算超时
     local elapsed = currentTick - g_lastHeartbeatTime
     
     if elapsed > CONFIG.HEARTBEAT_TIMEOUT then
         g_status = "心跳超时"
-        return false, string.format("超时 %d ms", elapsed)
+        return false, string.format("超时%dms", elapsed)
     end
     
     g_status = "运行正常"
@@ -139,7 +129,7 @@ end
 
 -- 启动主脚本
 local function startMainScript()
-    TracePrint("正在启动主脚本: " .. CONFIG.MAIN_SCRIPT_NAME)
+    writeLog("INFO", "正在启动主脚本: " .. CONFIG.MAIN_SCRIPT_NAME)
     g_status = "启动中"
     
     -- 重置心跳文件
@@ -149,14 +139,14 @@ local function startMainScript()
     -- 延迟后启动
     Delay(1000)
     
-    -- 使用Thread插件启动主脚本
+    -- 使用 Thread 插件启动主脚本
     local ok = Thread.Start(CONFIG.MAIN_SCRIPT_NAME)
     
     if ok then
-        TracePrint("主脚本启动成功")
+        writeLog("INFO", "主脚本启动成功")
         return true
     else
-        TracePrint("主脚本启动失败")
+        writeLog("ERROR", "主脚本启动失败")
         return false
     end
 end
@@ -175,12 +165,12 @@ local function restartMainScript()
     
     -- 检查最大重启次数
     if g_restartCount > CONFIG.MAX_RESTART_ATTEMPTS then
-        TracePrint(string.format("重启次数超过限制(%d次)，停止守护", CONFIG.MAX_RESTART_ATTEMPTS))
+        writeLog("FATAL", string.format("重启次数超过限制(%d次)，停止守护", CONFIG.MAX_RESTART_ATTEMPTS))
         g_running = false
         return false
     end
     
-    TracePrint(string.format("第 %d 次重启主脚本...", g_restartCount))
+    writeLog("WARN", string.format("第%d次重启主脚本...", g_restartCount))
     
     -- 延迟后重启
     Delay(CONFIG.RESTART_DELAY)
@@ -191,13 +181,15 @@ local function restartMainScript()
     return startMainScript()
 end
 
--- ==================== 主循环 ====================
+-- ==================== 守护循环 ====================
 
--- 守护主循环
+-- 守护主循环 (在独立线程中运行)
 local function guardianLoop()
-    initLog()
-    
-    TracePrint("守护循环启动")
+    writeLog("INFO", "========================================")
+    writeLog("INFO", "进程守护插件启动")
+    writeLog("INFO", "目标脚本: " .. CONFIG.MAIN_SCRIPT_NAME)
+    writeLog("INFO", "心跳文件: " .. CONFIG.HEARTBEAT_FILE)
+    writeLog("INFO", "========================================")
     
     -- 首次启动主脚本
     startMainScript()
@@ -213,13 +205,13 @@ local function guardianLoop()
         -- 每12次检测(约60秒)记录一次状态
         if checkCount % 12 == 0 then
             local runtime = formatRuntime(TickCount() - g_startTime)
-            TracePrint(string.format("[%s] 状态:%s 运行:%s 重启:%d次", 
-                g_status, msg, runtime, g_restartCount))
+            writeLog("INFO", string.format("状态:%s 运行:%s 重启:%d次", 
+                g_status, runtime, g_restartCount))
         end
         
         -- 异常时重启
         if not isAlive and g_lastHeartbeatTime > 0 then
-            TracePrint(string.format("检测到异常: %s", msg))
+            writeLog("WARN", "检测到异常: " .. msg)
             restartMainScript()
         end
         
@@ -227,48 +219,80 @@ local function guardianLoop()
         Delay(CONFIG.HEARTBEAT_INTERVAL)
     end
     
-    closeLog()
+    writeLog("INFO", "守护插件停止")
+    g_status = "停止"
+    g_guardianThread = nil
 end
 
--- ==================== 插件入口 ====================
+-- ==================== 插件导出函数 ====================
 
--- 启动守护
-function StartGuardian()
+-- 启动守护 (导出函数)
+function QMPlugin.StartGuardian()
+    if g_running then
+        return "守护已在运行中"
+    end
+    
     g_running = true
     g_restartCount = 0
     g_lastRestartTime = 0
     g_lastHeartbeatTime = 0
     g_startTime = TickCount()
+    g_status = "初始化"
     
-    local ok, err = pcall(guardianLoop)
-    if not ok then
-        TracePrint("守护插件异常: " .. tostring(err))
-        closeLog()
+    -- 在独立线程中启动守护循环
+    g_guardianThread = Thread.Start(guardianLoop)
+    
+    return "守护已启动"
+end
+
+-- 停止守护 (导出函数)
+function QMPlugin.StopGuardian()
+    if not g_running then
+        return "守护未运行"
     end
-end
-
--- 停止守护
-function StopGuardian()
+    
     g_running = false
-    TracePrint("正在停止守护...")
+    
+    -- 等待守护线程结束
+    if g_guardianThread then
+        Thread.Wait(g_guardianThread, 5000)
+    end
+    
+    return "守护已停止"
 end
 
--- 获取守护状态
-function GetGuardianStatus()
-    return {
-        status = g_status,
-        restartCount = g_restartCount,
-        running = g_running,
-        runtime = formatRuntime(TickCount() - g_startTime)
-    }
+-- 获取守护状态 (导出函数)
+function QMPlugin.GetStatus()
+    local runtime = 0
+    if g_startTime > 0 then
+        runtime = TickCount() - g_startTime
+    end
+    
+    return string.format("状态:%s 运行:%s 重启:%d次", 
+        g_status, formatRuntime(runtime), g_restartCount)
 end
 
--- ==================== 心跳接口 (供主脚本调用) ====================
+-- 设置主脚本名称 (导出函数)
+function QMPlugin.SetMainScript(scriptName)
+    CONFIG.MAIN_SCRIPT_NAME = scriptName
+    writeLog("INFO", "设置主脚本: " .. scriptName)
+    return "OK"
+end
 
--- 主脚本调用此函数发送心跳
-function SendHeartbeat()
+-- 设置心跳超时时间 (导出函数)
+function QMPlugin.SetTimeout(timeoutMs)
+    CONFIG.HEARTBEAT_TIMEOUT = tonumber(timeoutMs) or 15000
+    writeLog("INFO", "设置超时时间: " .. CONFIG.HEARTBEAT_TIMEOUT .. "ms")
+    return "OK"
+end
+
+-- 发送心跳 (供主脚本调用，导出函数)
+function QMPlugin.SendHeartbeat()
     File.Write(CONFIG.HEARTBEAT_FILE, tostring(TickCount()))
+    return "OK"
 end
 
--- 自动启动 (如果直接运行此插件)
-StartGuardian()
+-- 测试插件是否加载成功 (导出函数)
+function QMPlugin.Test()
+    return "GuardianPlugin 加载成功 v3.1.0"
+end

@@ -1,77 +1,94 @@
 # 按键精灵移动版 - 进程守护插件
 
-无界面版进程守护插件，仅通过日志记录运行状态。
+无界面版进程守护插件，适配按键精灵移动版插件系统。
 
 ## 📁 文件说明
 
 | 文件 | 说明 |
 |------|------|
-| `GuardianPlugin.lua` | **守护插件** - 无界面，仅日志 |
+| `GuardianPlugin.lua` | **守护插件** - 放入 Plugin 文件夹 |
 | `MainScript.lua` | **主脚本示例** - 需要配合守护插件使用 |
 
-## 🚀 使用方法
+## 🚀 安装步骤
 
-### 1. 导入插件
+### 1. 放置插件文件
 
-将 `GuardianPlugin.lua` 导入到按键精灵移动版作为**插件**使用：
-
+将 `GuardianPlugin.lua` 复制到按键精灵安装目录的 **Plugin** 文件夹：
 ```
-按键精灵 → 插件 → 导入插件 → 选择 GuardianPlugin.lua
-```
-
-### 2. 放置主脚本
-
-将主脚本放到脚本目录：
-```
-/sdcard/按键精灵/脚本/
-├── MainScript.lua    (你的主脚本)
-└── ...
+/按键精灵/Plugin/
+└── GuardianPlugin.lua
 ```
 
-### 3. 在主脚本中添加心跳
+### 2. 刷新插件
+
+在按键精灵左侧的【全部命令】中，右键点击【插件命令】，选择【刷新】。
+
+### 3. 在主脚本中导入插件
+
+在需要使用守护功能的主脚本开头添加：
+```lua
+Import "GuardianPlugin"
+```
+
+## 🔌 使用方式
+
+### 启动守护
 
 ```lua
--- 在主脚本中定时发送心跳
-local HEARTBEAT_FILE = "/sdcard/按键精灵/心跳/heartbeat.txt"
+Import "GuardianPlugin"
 
-local function sendHeartbeat()
-    local f = io.open(HEARTBEAT_FILE, "w")
-    if f then
-        f:write(tostring(TickCount()))
-        f:close()
-    end
-end
+-- 启动守护（在独立线程中运行）
+GuardianPlugin.StartGuardian()
+```
 
--- 主循环
+### 在主脚本中发送心跳
+
+```lua
+Import "GuardianPlugin"
+
+-- 主循环中定时发送心跳
 while true do
-    sendHeartbeat()   -- 发送心跳
+    GuardianPlugin.SendHeartbeat()   -- 发送心跳
     -- 你的业务代码...
     Delay(3000)
 end
 ```
 
-### 4. 启动守护
+### 停止守护
 
-**方法1**: 直接运行 `GuardianPlugin.lua` 脚本
-
-**方法2**: 在其他脚本中调用：
 ```lua
-Import "GuardianPlugin"
-StartGuardian()   -- 启动守护
+GuardianPlugin.StopGuardian()
+```
+
+### 获取守护状态
+
+```lua
+local status = GuardianPlugin.GetStatus()
+TracePrint(status)  -- 输出: 状态:运行正常 运行:5分32秒 重启:0次
+```
+
+### 配置守护参数
+
+```lua
+-- 设置要守护的主脚本名称（必须在按键精灵中有此脚本）
+GuardianPlugin.SetMainScript("你的主脚本名称")
+
+-- 设置心跳超时时间（毫秒）
+GuardianPlugin.SetTimeout(15000)  -- 15秒
 ```
 
 ## ⚙️ 插件配置
 
-编辑 `GuardianPlugin.lua` 修改配置：
+编辑 `GuardianPlugin.lua` 修改默认配置：
 
 ```lua
 local CONFIG = {
     -- 主脚本配置
-    MAIN_SCRIPT_NAME = "MainScript",      -- 主脚本名称
+    MAIN_SCRIPT_NAME = "MainScript",      -- 默认主脚本名称
     MAIN_SCRIPT_PATH = "/sdcard/按键精灵/脚本/MainScript.lua",
     
     -- 心跳配置
-    HEARTBEAT_FILE = "/sdcard/按键精灵/心跳/heartbeat.txt",
+    HEARTBEAT_FILE = "/sdcard/按键精灵/heartbeat.txt",
     HEARTBEAT_INTERVAL = 5000,            -- 检测间隔 5秒
     HEARTBEAT_TIMEOUT = 15000,            -- 超时时间 15秒
     
@@ -81,90 +98,103 @@ local CONFIG = {
     RESTART_RESET_TIME = 60000,           -- 重启计数重置时间 1分钟
     
     -- 日志配置
-    LOG_DIR = "/sdcard/按键精灵/日志/",
-    LOG_PREFIX = "guardian_",
+    LOG_FILE = "/sdcard/按键精灵/guardian_log.txt",
 }
 ```
 
-## 📊 功能特性
+## 📊 导出函数列表
 
-| 功能 | 说明 |
-|------|------|
-| 🔄 自动重启 | 检测到主脚本停止自动重启 |
-| 📝 日志记录 | 使用按键精灵Log插件记录运行状态 |
-| ⏱️ 心跳检测 | 通过文件时间戳检测脚本存活 |
-| ⚡ 防死循环 | 限制重启次数，避免无限重启 |
-| 🎯 无界面 | 不显示任何UI，后台静默运行 |
+| 函数名 | 参数 | 返回值 | 说明 |
+|--------|------|--------|------|
+| `StartGuardian()` | 无 | 字符串 | 启动守护 |
+| `StopGuardian()` | 无 | 字符串 | 停止守护 |
+| `SendHeartbeat()` | 无 | 字符串 | 发送心跳 |
+| `GetStatus()` | 无 | 字符串 | 获取状态 |
+| `SetMainScript(name)` | 脚本名称 | 字符串 | 设置主脚本 |
+| `SetTimeout(ms)` | 毫秒 | 字符串 | 设置超时 |
+| `Test()` | 无 | 字符串 | 测试插件 |
 
 ## 📜 日志查看
 
 日志文件位置：
 ```
-/sdcard/按键精灵/日志/guardian_yyyyMMdd_HHmmss.txt
+/sdcard/按键精灵/guardian_log.txt
 ```
 
-在按键精灵中使用 `TracePrint` 查看实时日志。
+在按键精灵中使用 `TracePrint` 查看实时输出。
 
-## 🔌 插件接口
+## 📝 完整示例
 
+### 守护脚本
 ```lua
+Import "GuardianPlugin"
+
+-- 测试插件是否加载
+TracePrint(GuardianPlugin.Test())
+
+-- 配置要守护的脚本
+GuardianPlugin.SetMainScript("我的主脚本")
+GuardianPlugin.SetTimeout(20000)  -- 20秒超时
+
 -- 启动守护
-StartGuardian()
+TracePrint(GuardianPlugin.StartGuardian())
+```
 
--- 停止守护
-StopGuardian()
+### 被守护的主脚本
+```lua
+Import "GuardianPlugin"
 
--- 获取守护状态
-local status = GetGuardianStatus()
--- 返回: {status, restartCount, running, runtime}
+function Main()
+    TracePrint("主脚本启动")
+    
+    while true do
+        -- 发送心跳
+        GuardianPlugin.SendHeartbeat()
+        
+        -- 执行业务逻辑
+        -- ...
+        
+        Delay(3000)
+    end
+end
 
--- 发送心跳 (主脚本调用)
-SendHeartbeat()
+Main()
 ```
 
 ## ⚠️ 注意事项
 
 1. **存储权限**: 需要存储权限来读写心跳文件和日志
-2. **路径配置**: 确保 `MAIN_SCRIPT_PATH` 与实际路径一致
+2. **脚本名称**: `SetMainScript` 设置的名称必须与按键精灵中的脚本名称一致
 3. **心跳间隔**: 主脚本的心跳间隔应小于 `HEARTBEAT_TIMEOUT`
-4. **多线程**: 插件使用 Thread 插件启动主脚本
-
-## 📝 示例工作流
-
-```
-1. 运行 GuardianPlugin.lua
-   ↓
-2. 插件启动并记录日志
-   ↓
-3. 插件启动 MainScript.lua
-   ↓
-4. MainScript 定时发送心跳
-   ↓
-5. 插件检测心跳，如异常则重启
-```
+4. **插件路径**: 确保插件文件放在正确的 Plugin 文件夹中
 
 ## 🔧 故障排查
 
+### Q: 插件命令不显示？
+A: 确保 GuardianPlugin.lua 放在 Plugin 文件夹，然后右键【插件命令】→【刷新】
+
 ### Q: 主脚本不启动？
-A: 检查 `MAIN_SCRIPT_NAME` 是否与按键精灵中显示的脚本名称一致
+A: 检查 `SetMainScript` 设置的名称是否与按键精灵中的脚本名称完全一致
 
 ### Q: 频繁重启？
-A: 检查主脚本是否正确发送心跳，或调大 `HEARTBEAT_TIMEOUT`
+A: 检查主脚本是否正确调用 `SendHeartbeat()`，或调大超时时间
 
 ### Q: 无日志输出？
 A: 检查是否有存储权限，或手动创建日志目录
 
 ## 📜 更新日志
 
+### v3.1.0
+- 适配按键精灵移动版插件系统
+- 使用 `QMPlugin` 命名空间导出函数
+- 添加 `SetMainScript` 和 `SetTimeout` 配置接口
+
 ### v3.0.0
-- 移除所有UI界面（悬浮窗、Toast）
-- 使用按键精灵Log插件记录日志
-- 优化插件接口设计
-- 使用Thread插件启动主脚本
+- 无界面版本
+- 使用 Log 插件记录日志
 
 ### v2.0.0
-- 改用文件心跳机制
-- 添加悬浮窗状态显示
+- 文件心跳机制
 
 ### v1.0.0
 - 基础守护功能
