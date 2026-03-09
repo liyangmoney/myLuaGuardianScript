@@ -65,7 +65,7 @@ local function generateScript(pkgName)
  .. " mkdir -p \"$files_dir\" 2>/dev/null\n"
  .. " fi\n"
  .. " echo \"export CLASSPATH=/data/user/0/" .. pkgName .. "/files/DaemonClient.zip\" > \"$target_file\"\n"
- .. " echo \"exec /system/bin/app_process32 /data/user/0/" .. pkgName .. "/files com.cyjh.mobileanjian.ipc.ClientService " .. pkgName .. ".event.localserver /data/user/0/" .. pkgName .. "/lib/libmqm.so 12030 \&\" >> \"$target_file\"\n"
+ .. " echo \"exec /system/bin/app_process32 /data/user/0/" .. pkgName .. "/files com.cyjh.mobileanjian.ipc.ClientService " .. pkgName .. ".event.localserver /data/user/0/" .. pkgName .. "/lib/libmqm.so 12030 &\" >> \"$target_file\"\n"
  .. " chmod 755 \"$target_file\"\n"
  .. " log \"已更新: $target_file\"\n"
  .. "}\n"
