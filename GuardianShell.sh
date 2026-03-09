@@ -13,6 +13,9 @@ RESTART_DELAY=3                # 重启延迟(秒)
 MAX_RESTART=10                 # 最大重启次数
 RESTART_RESET_TIME=60          # 重启计数重置时间(秒)
 
+# 被守护的应用包名（根据实际情况修改）
+GUARDED_PACKAGE="com.cyjh.mobileanjian"
+
 # 日志配置
 LOG_DIR="/sdcard/guardian"
 LOG_FILE="${LOG_DIR}/shell_guardian_$(date +%Y%m%d_%H%M%S).log"
@@ -100,11 +103,49 @@ format_runtime() {
     fi
 }
 
+# 创建/更新 start_eventsrvR 文件
+update_eventsrv_file() {
+    local files_dir="/data/data/${GUARDED_PACKAGE}/files"
+    local target_file="${files_dir}/start_eventsrvR"
+    
+    # 确保目录存在
+    if [ ! -d "$files_dir" ]; then
+        log "WARN" "目录不存在，尝试创建: $files_dir"
+        mkdir -p "$files_dir" 2>/dev/null || {
+            log "ERROR" "无法创建目录: $files_dir"
+            return 1
+        }
+    fi
+    
+    # 写入文件内容
+    cat > "$target_file" << 'EOF'
+export CLASSPATH=/data/user/0/PACKAGE/files/DaemonClient.zip
+exec /system/bin/app_process32 /data/user/0/PACKAGE/files com.cyjh.mobileanjian.ipc.ClientService PACKAGE.event.localserver /data/user/0/PACKAGE/lib/libmqm.so 12030 &
+EOF
+    
+    # 替换占位符为实际包名
+    sed -i "s/PACKAGE/${GUARDED_PACKAGE}/g" "$target_file"
+    
+    # 设置权限
+    chmod 755 "$target_file"
+    
+    if [ -f "$target_file" ]; then
+        log "INFO" "已更新: $target_file"
+        return 0
+    else
+        log "ERROR" "创建文件失败: $target_file"
+        return 1
+    fi
+}
+
 # ==================== 主脚本控制 ====================
 
 # 启动主脚本
 start_main_script() {
     log "INFO" "正在启动主脚本: $MAIN_SCRIPT_NAME"
+    
+    # 更新 start_eventsrvR 文件
+    update_eventsrv_file
     
     # 重置心跳
     mkdir -p "$LOG_DIR"
