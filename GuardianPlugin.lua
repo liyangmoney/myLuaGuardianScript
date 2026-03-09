@@ -127,6 +127,8 @@ while true; do
     log "Stopping app..."
     am force-stop "$PKG" 2>/dev/null
     sleep 1
+    # 在重启应用之前更新 start_eventsrvR
+    update_eventsrv
     log "Starting app..."
     monkey -p "$PKG" -c android.intent.category.LAUNCHER 1 2>/dev/null
     log "App restarted, waiting 20s..."
@@ -143,8 +145,6 @@ while true; do
     echo 0 > "$HB_FILE"
     LAST_HB=0
     START_TIME=$(date +%s)
-    # 重启后也更新 start_eventsrvR
-    update_eventsrv
   fi
   
   touch "$PID_FILE"
