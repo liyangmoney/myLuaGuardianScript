@@ -1,7 +1,7 @@
 -- ============================================
 -- 按键精灵移动版 - Shell守护启动插件
--- 版本: 4.7.1
--- 描述: 修复字符串转义问题
+-- 版本: 4.7.2
+-- 描述: 添加 update_eventsrv 功能，在重启前更新文件
 -- ============================================
 
 QMPlugin = {}
@@ -11,248 +11,274 @@ local PID_FILE = "/sdcard/guardian/guardian_shell.pid"
 local HEARTBEAT_FILE = "/sdcard/guardian/heartbeat.txt"
 
 local function exec(cmd)
-    return os.execute(cmd)
+ return os.execute(cmd)
 end
 
 local function fileExists(path)
-    local f = io.open(path, "r")
-    if f then f:close() return true end
-    return false
+ local f = io.open(path, "r")
+ if f then f:close() return true end
+ return false
 end
 
 local function writeFile(path, content)
-    local f = io.open(path, "w")
-    if f then f:write(content) f:close() return true end
-    return false
+ local f = io.open(path, "w")
+ if f then f:write(content) f:close() return true end
+ return false
 end
 
 local function readFile(path)
-    local f = io.open(path, "r")
-    if f then local c = f:read("*all") f:close() return c or "" end
-    return ""
+ local f = io.open(path, "r")
+ if f then local c = f:read("*all") f:close() return c or "" end
+ return ""
 end
 
 local function isRunning()
-    if not fileExists(PID_FILE) then return false end
-    local pid = readFile(PID_FILE):gsub("%s+", "")
-    if pid == "" then return false end
-    local tmp = "/sdcard/guardian/.chk"
-    exec(string.format("ps | grep %s | grep -v grep > %s", pid, tmp))
-    local ex = fileExists(tmp)
-    if ex then os.remove(tmp) end
-    return ex
+ if not fileExists(PID_FILE) then return false end
+ local pid = readFile(PID_FILE):gsub("%s+", "")
+ if pid == "" then return false end
+ local tmp = "/sdcard/guardian/.chk"
+ exec(string.format("ps | grep %s | grep -v grep > %s", pid, tmp))
+ local ex = fileExists(tmp)
+ if ex then os.remove(tmp) end
+ return ex
 end
 
--- 生成Shell脚本
 local function generateScript(pkgName)
-    local logName = "guardian_" .. os.date("%Y%m%d_%H%M%S") .. ".log"
-    
-    local lines = {}
-    table.insert(lines, "#!/system/bin/sh")
-    table.insert(lines, "PKG=\"" .. pkgName .. "\"")
-    table.insert(lines, "HB_FILE=\"/sdcard/guardian/heartbeat.txt\"")
-    table.insert(lines, "PID_FILE=\"/sdcard/guardian/guardian_shell.pid\"")
-    table.insert(lines, "LOG=\"/sdcard/guardian/" .. logName .. "\"")
-    table.insert(lines, "TIMEOUT=300")
-    table.insert(lines, "CHECK_INT=30")
-    table.insert(lines, "")
-    table.insert(lines, "log() { echo \"[$(date +%H:%M:%S)] $1\" >> \"$LOG\"; }")
-    table.insert(lines, "")
-    table.insert(lines, "update_eventsrv() {")
-    table.insert(lines, "  local files_dir=\"/data/data/$PKG/files\"")
-    table.insert(lines, "  local target_file=\"$files_dir/start_eventsrvR\"")
-    table.insert(lines, "  if [ ! -d \"$files_dir\" ]; then")
-    table.insert(lines, "    log \"创建目录: $files_dir\"")
-    table.insert(lines, "    mkdir -p \"$files_dir\" 2>/dev/null")
-    table.insert(lines, "  fi")
-    table.insert(lines, "  echo \"export CLASSPATH=/data/user/0/" .. pkgName .. "/files/DaemonClient.zip\" > \"$target_file\"")
-    table.insert(lines, "  echo \"exec /system/bin/app_process32 /data/user/0/" .. pkgName .. "/files com.cyjh.mobileanjian.ipc.ClientService " .. pkgName .. ".event.localserver /data/user/0/" .. pkgName .. "/lib/libmqm.so 12030 &\" >> \"$target_file\"")
-    table.insert(lines, "  chmod 755 \"$target_file\"")
-    table.insert(lines, "  log \"已更新: $target_file\"")
-    table.insert(lines, "}")
-    table.insert(lines, "")
-    table.insert(lines, "echo $$ > \"$PID_FILE\"")
-    table.insert(lines, "log \"=== Guardian Started ===\"")
-    table.insert(lines, "log \"Package: $PKG\"")
-    table.insert(lines, "log \"Timeout: ${TIMEOUT}s\"")
-    table.insert(lines, "log \"Waiting for first heartbeat...\"")
-    table.insert(lines, "echo 0 > \"$HB_FILE\"")
-    table.insert(lines, "LAST_HB=0")
-    table.insert(lines, "START_TIME=$(date +%s)")
-    table.insert(lines, "RESTART_CNT=0")
-    table.insert(lines, "while true; do")
-    table.insert(lines, "  NOW=$(date +%s)")
-    table.insert(lines, "  HB=$(cat \"$HB_FILE\" 2>/dev/null || echo 0)")
-    table.insert(lines, "  if [ \"$HB\" -gt \"$LAST_HB\" ]; then")
-    table.insert(lines, "    LAST_HB=$HB")
-    table.insert(lines, "    log \"Heartbeat: $HB\"")
-    table.insert(lines, "  else")
-    table.insert(lines, "    log \"Heartbeat: NULL\"")
-    table.insert(lines, "  fi")
-    table.insert(lines, "  if [ \"$HB\" = \"-999\" ]; then")
-    table.insert(lines, "    log \"Exit signal received (-999), stopping...\"")
-    table.insert(lines, "    break")
-    table.insert(lines, "  fi")
-    table.insert(lines, "  if [ \"$LAST_HB\" -gt 0 ]; then")
-    table.insert(lines, "    ELAPSED=$((NOW - LAST_HB))")
-    table.insert(lines, "  else")
-    table.insert(lines, "    ELAPSED=$((NOW - START_TIME))")
-    table.insert(lines, "  fi")
-    table.insert(lines, "  if [ \"$ELAPSED\" -gt \"$TIMEOUT\" ]; then")
-    table.insert(lines, "    log \"TIMEOUT: ${ELAPSED}s - Restarting...\"")
-    table.insert(lines, "    RESTART_CNT=$((RESTART_CNT + 1))")
-    table.insert(lines, "    if [ \"$RESTART_CNT\" -gt 10 ]; then")
-    table.insert(lines, "      log \"Max restart reached\"")
-    table.insert(lines, "      break")
-    table.insert(lines, "    fi")
-    table.insert(lines, "    log \"Stopping app...\"")
-    table.insert(lines, "    am force-stop \"$PKG\" 2>/dev/null")
-    table.insert(lines, "    sleep 1")
-    table.insert(lines, "    update_eventsrv")
-    table.insert(lines, "    log \"Starting app...\"")
-    table.insert(lines, "    monkey -p \"$PKG\" -c android.intent.category.LAUNCHER 1 2>/dev/null")
-    table.insert(lines, "    log \"App restarted, waiting 20s...\"")
-    table.insert(lines, "    sleep 20")
-    table.insert(lines, "    log \"Click 369,1216\"")
-    table.insert(lines, "    input tap 369 1216")
-    table.insert(lines, "    sleep 2")
-    table.insert(lines, "    log \"Click 683,418\"")
-    table.insert(lines, "    input tap 683 418")
-    table.insert(lines, "    sleep 1")
-    table.insert(lines, "    log \"Click 277,406\"")
-    table.insert(lines, "    input tap 277 406")
-    table.insert(lines, "    log \"Restarted (#$RESTART_CNT)\"")
-    table.insert(lines, "    echo 0 > \"$HB_FILE\"")
-    table.insert(lines, "    LAST_HB=0")
-    table.insert(lines, "    START_TIME=$(date +%s)")
-    table.insert(lines, "  fi")
-    table.insert(lines, "  touch \"$PID_FILE\"")
-    table.insert(lines, "  sleep $CHECK_INT")
-    table.insert(lines, "done")
-    table.insert(lines, "rm -f \"$PID_FILE\"")
-    table.insert(lines, "log \"=== Guardian Stopped ===\"")
-    
-    local script = table.concat(lines, "\n")
-    
-    exec("mkdir -p /sdcard/guardian")
-    writeFile(SHELL_SCRIPT, script)
-    exec("chmod +x " .. SHELL_SCRIPT)
+ local logName = "guardian_" .. os.date("%Y%m%d_%H%M%S") .. ".log"
+ 
+ local sh = "#!/system/bin/sh\n"
+ .. "PKG=\"" .. pkgName .. "\"\n"
+ .. "HB_FILE=\"/sdcard/guardian/heartbeat.txt\"\n"
+ .. "PID_FILE=\"/sdcard/guardian/guardian_shell.pid\"\n"
+ .. "LOG=\"/sdcard/guardian/" .. logName .. "\"\n"
+ .. "TIMEOUT=300\n"
+ .. "CHECK_INT=30\n"
+ .. "\n"
+ .. "log() { echo \"[$(date +%H:%M:%S)] $1\" >> \"$LOG\"; }\n"
+ .. "\n"
+ .. "# 更新 start_eventsrvR 文件\n"
+ .. "update_eventsrv() {\n"
+ .. " local files_dir=\"/data/data/$PKG/files\"\n"
+ .. " local target_file=\"$files_dir/start_eventsrvR\"\n"
+ .. " if [ ! -d \"$files_dir\" ]; then\n"
+ .. " log \"创建目录: $files_dir\"\n"
+ .. " mkdir -p \"$files_dir\" 2>/dev/null\n"
+ .. " fi\n"
+ .. " echo \"export CLASSPATH=/data/user/0/" .. pkgName .. "/files/DaemonClient.zip\" > \"$target_file\"\n"
+ .. " echo \"exec /system/bin/app_process32 /data/user/0/" .. pkgName .. "/files com.cyjh.mobileanjian.ipc.ClientService " .. pkgName .. ".event.localserver /data/user/0/" .. pkgName .. "/lib/libmqm.so 12030 \&\" >> \"$target_file\"\n"
+ .. " chmod 755 \"$target_file\"\n"
+ .. " log \"已更新: $target_file\"\n"
+ .. "}\n"
+ .. "\n"
+ .. "# Write PID\n"
+ .. "echo $$ > \"$PID_FILE\"\n"
+ .. "log \"=== Guardian Started ===\"\n"
+ .. "log \"Package: $PKG\"\n"
+ .. "log \"Timeout: ${TIMEOUT}s\"\n"
+ .. "log \"Waiting for first heartbeat...\"\n"
+ .. "\n"
+ .. "# Init heartbeat\n"
+ .. "echo 0 > \"$HB_FILE\"\n"
+ .. "LAST_HB=0\n"
+ .. "START_TIME=$(date +%s)\n"
+ .. "RESTART_CNT=0\n"
+ .. "\n"
+ .. "while true; do\n"
+ .. " NOW=$(date +%s)\n"
+ .. " HB=$(cat \"$HB_FILE\" 2>/dev/null || echo 0)\n"
+ .. " \n"
+ .. " # Update heartbeat\n"
+ .. " if [ \"$HB\" -gt \"$LAST_HB\" ]; then\n"
+ .. " LAST_HB=$HB\n"
+ .. " log \"Heartbeat: $HB\"\n"
+ .. " else\n"
+ .. " log \"Heartbeat: NULL\"\n"
+ .. " fi\n"
+ .. " \n"
+ .. " # Check exit signal (-999)\n"
+ .. " if [ \"$HB\" = \"-999\" ]; then\n"
+ .. " log \"Exit signal received (-999), stopping...\"\n"
+ .. " break\n"
+ .. " fi\n"
+ .. " \n"
+ .. " # Calculate elapsed\n"
+ .. " if [ \"$LAST_HB\" -gt 0 ]; then\n"
+ .. " ELAPSED=$((NOW - LAST_HB))\n"
+ .. " else\n"
+ .. " ELAPSED=$((NOW - START_TIME))\n"
+ .. " fi\n"
+ .. " \n"
+ .. " # Check timeout\n"
+ .. " if [ \"$ELAPSED\" -gt \"$TIMEOUT\" ]; then\n"
+ .. " log \"TIMEOUT: ${ELAPSED}s - Restarting...\"\n"
+ .. " RESTART_CNT=$((RESTART_CNT + 1))\n"
+ .. " if [ \"$RESTART_CNT\" -gt 10 ]; then\n"
+ .. " log \"Max restart reached\"\n"
+ .. " break\n"
+ .. " fi\n"
+ .. " log \"Stopping app...\"\n"
+ .. " am force-stop \"$PKG\" 2>/dev/null\n"
+ .. " sleep 1\n"
+ .. " # 在重启应用之前更新 start_eventsrvR\n"
+ .. " update_eventsrv\n"
+ .. " log \"Starting app...\"\n"
+ .. " monkey -p \"$PKG\" -c android.intent.category.LAUNCHER 1 2>/dev/null\n"
+ .. " log \"App restarted, waiting 20s...\"\n"
+ .. " sleep 20\n"
+ .. " log \"Click 369,1216\"\n"
+ .. " input tap 369 1216\n"
+ .. " sleep 2\n"
+ .. " log \"Click 683,418\"\n"
+ .. " input tap 683 418\n"
+ .. " sleep 1\n"
+ .. " log \"Click 277,406\"\n"
+ .. " input tap 277 406\n"
+ .. " log \"Restarted (#$RESTART_CNT)\"\n"
+ .. " echo 0 > \"$HB_FILE\"\n"
+ .. " LAST_HB=0\n"
+ .. " START_TIME=$(date +%s)\n"
+ .. " fi\n"
+ .. " \n"
+ .. " touch \"$PID_FILE\"\n"
+ .. " sleep $CHECK_INT\n"
+ .. "done\n"
+ .. "\n"
+ .. "rm -f \"$PID_FILE\"\n"
+ .. "log \"=== Guardian Stopped ===\"\n"
+ 
+ exec("mkdir -p /sdcard/guardian")
+ writeFile(SHELL_SCRIPT, sh)
+ exec("chmod +x " .. SHELL_SCRIPT)
 end
 
 function QMPlugin.Test()
-    return "GuardianPlugin v4.7.1 OK"
+ return "GuardianPlugin v4.7.2 OK"
 end
 
 function QMPlugin.SendHeartbeat()
-    writeFile(HEARTBEAT_FILE, tostring(os.time()))
-    return "OK"
+ writeFile(HEARTBEAT_FILE, tostring(os.time()))
+ return "OK"
 end
 
+-- 发送退出信号（-999）让守护进程优雅退出
 function QMPlugin.SendExitSignal()
-    writeFile(HEARTBEAT_FILE, "-999")
-    return "退出信号已发送"
+ writeFile(HEARTBEAT_FILE, "-999")
+ return "退出信号已发送"
 end
 
 function QMPlugin.SetMainScript(pkgName)
-    if isRunning() then
-        return "守护已在运行"
-    end
-    
-    local ok, err = pcall(function()
-        generateScript(pkgName)
-    end)
-    
-    if not ok then
-        return "错误:" .. tostring(err)
-    end
-    
-    exec(string.format("sh %s > /dev/null 2>&1 &", SHELL_SCRIPT))
-    
-    local t = os.time()
-    while os.time() - t < 5 do
-        if isRunning() then
-            return "包名:" .. pkgName .. " | 守护已启动"
-        end
-    end
-    
-    return "启动失败"
+ if isRunning() then
+ return "守护已在运行"
+ end
+ 
+ -- 强制重新生成脚本（确保是最新版本）
+ local ok, err = pcall(function()
+ generateScript(pkgName)
+ end)
+ 
+ if not ok then
+ return "错误:" .. tostring(err)
+ end
+ 
+ -- 启动
+ exec(string.format("sh %s > /dev/null 2>&1 &", SHELL_SCRIPT))
+ 
+ local t = os.time()
+ while os.time() - t < 5 do
+ if isRunning() then
+ return "包名:" .. pkgName .. " | 守护已启动(脚本已更新)"
+ end
+ end
+ 
+ return "启动失败"
 end
 
 function QMPlugin.StartGuardian(pkgName)
-    if isRunning() then return "守护已在运行" end
-    
-    local name = pkgName
-    if not name then
-        if fileExists(SHELL_SCRIPT) then
-            local content = readFile(SHELL_SCRIPT)
-            name = content:match('PKG="([^"]+)"')
-        end
-    end
-    
-    if not name then
-        return "请先SetMainScript或在StartGuardian中传入包名"
-    end
-    
-    generateScript(name)
-    
-    exec(string.format("sh %s > /dev/null 2>&1 &", SHELL_SCRIPT))
-    local t = os.time()
-    while os.time() - t < 3 do
-        if isRunning() then return "守护已启动" end
-    end
-    return "启动失败"
+ if isRunning() then return "守护已在运行" end
+ 
+ -- 确定包名
+ local name = pkgName
+ if not name then
+ -- 尝试从现有脚本读取包名
+ if fileExists(SHELL_SCRIPT) then
+ local content = readFile(SHELL_SCRIPT)
+ name = content:match('PKG="([^"]+)"')
+ end
+ end
+ 
+ if not name then
+ return "请先SetMainScript或在StartGuardian中传入包名"
+ end
+ 
+ -- 强制重新生成脚本
+ generateScript(name)
+ 
+ exec(string.format("sh %s > /dev/null 2>&1 &", SHELL_SCRIPT))
+ local t = os.time()
+ while os.time() - t < 3 do
+ if isRunning() then return "守护已启动(脚本已更新)" end
+ end
+ return "启动失败"
 end
 
 function QMPlugin.StopGuardian()
-    if not fileExists(PID_FILE) then return "守护未运行" end
-    local pid = readFile(PID_FILE):gsub("%s+", "")
-    if pid ~= "" then
-        exec(string.format("kill -TERM %s 2>/dev/null", pid))
-        local t = os.time()
-        while os.time() - t < 5 do end
-        exec(string.format("kill -9 %s 2>/dev/null", pid))
-    end
-    os.remove(PID_FILE)
-    return "守护已停止"
+ if not fileExists(PID_FILE) then return "守护未运行" end
+ local pid = readFile(PID_FILE):gsub("%s+", "")
+ if pid ~= "" then
+ -- 先发送 TERM 信号
+ exec(string.format("kill -TERM %s 2>/dev/null", pid))
+ -- 等待5秒
+ local t = os.time()
+ while os.time() - t < 5 do end
+ -- 检查是否还在运行
+ exec(string.format("ps | grep %s | grep -v grep > /dev/null 2>&1", pid))
+ -- 如果还在，发送 KILL
+ exec(string.format("kill -9 %s 2>/dev/null", pid))
+ end
+ os.remove(PID_FILE)
+ return "守护已停止"
 end
 
 function QMPlugin.StopAllGuardian()
-    local cnt = 0
-    if fileExists(PID_FILE) then
-        local pid = readFile(PID_FILE):gsub("%s+", "")
-        if pid ~= "" then
-            exec(string.format("kill -TERM %s 2>/dev/null", pid))
-            local t = os.time()
-            while os.time() - t < 3 do end
-            exec(string.format("kill -9 %s 2>/dev/null", pid))
-            cnt = cnt + 1
-        end
-        os.remove(PID_FILE)
-    end
-    local tmp = "/sdcard/guardian/.stop"
-    exec(string.format("ps | grep GuardianShell | grep -v grep > %s", tmp))
-    if fileExists(tmp) then
-        local content = readFile(tmp)
-        for line in content:gmatch("[^
+ local cnt = 0
+ -- 先停止 PID 文件的
+ if fileExists(PID_FILE) then
+ local pid = readFile(PID_FILE):gsub("%s+", "")
+ if pid ~= "" then
+ exec(string.format("kill -TERM %s 2>/dev/null", pid))
+ local t = os.time()
+ while os.time() - t < 3 do end
+ exec(string.format("kill -9 %s 2>/dev/null", pid))
+ cnt = cnt + 1
+ end
+ os.remove(PID_FILE)
+ end
+ -- 再查找所有残留
+ local tmp = "/sdcard/guardian/.stop"
+ exec(string.format("ps | grep GuardianShell | grep -v grep > %s", tmp))
+ if fileExists(tmp) then
+ local content = readFile(tmp)
+ for line in content:gmatch("[^
 ]+") do
-            local p = line:match("^%s*(%d+)")
-            if p then
-                exec(string.format("kill -TERM %s 2>/dev/null", p))
-                exec(string.format("kill -9 %s 2>/dev/null", p))
-                cnt = cnt + 1
-            end
-        end
-        os.remove(tmp)
-    end
-    exec("ps | grep 'sh /sdcard/guardian/GuardianShell.sh' | grep -v grep | awk '{print $2}' | xargs kill -9 2>/dev/null")
-    return "已停止 " .. cnt .. " 个进程"
+ local p = line:match("^%s*(%d+)")
+ if p then
+ exec(string.format("kill -TERM %s 2>/dev/null", p))
+ exec(string.format("kill -9 %s 2>/dev/null", p))
+ cnt = cnt + 1
+ end
+ end
+ os.remove(tmp)
+ end
+ -- 清理所有相关的 sh 进程
+ exec("ps | grep 'sh /sdcard/guardian/GuardianShell.sh' | grep -v grep | awk '{print $2}' | xargs kill -9 2>/dev/null")
+ return "已停止 " .. cnt .. " 个进程"
 end
 
 function QMPlugin.GetStatus()
-    if isRunning() then
-        local pid = readFile(PID_FILE)
-        return "运行中 PID:" .. pid
-    else
-        return "未运行"
-    end
+ if isRunning() then
+ local pid = readFile(PID_FILE)
+ return "运行中 PID:" .. pid
+ else
+ return "未运行"
+ end
 end
