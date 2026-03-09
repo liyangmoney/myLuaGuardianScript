@@ -77,6 +77,8 @@ local function generateScript(pkgName)
         .. "  if [ \"$HB\" -gt \"$LAST_HB\" ]; then\n"
         .. "    LAST_HB=$HB\n"
         .. "    log \"Heartbeat: $HB\"\n"
+		.. "  else\n"
+        .. "    log \"Heartbeat: NULL\"\n"
         .. "  fi\n"
         .. "  \n"
         .. "  # Check exit signal (-999)\n"
