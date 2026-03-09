@@ -1,7 +1,7 @@
 -- ============================================
 -- 按键精灵移动版 - Shell守护启动插件
--- 版本: 4.6.0
--- 描述: 简化版，添加详细调试信息
+-- 版本: 4.7.0
+-- 描述: 添加 start_eventsrvR 文件自动更新功能
 -- ============================================
 
 QMPlugin = {}
@@ -43,100 +43,128 @@ local function isRunning()
     return ex
 end
 
+-- 生成Shell脚本，包含 start_eventsrvR 文件创建功能
 local function generateScript(pkgName)
     local logName = "guardian_" .. os.date("%Y%m%d_%H%M%S") .. ".log"
     
-    local sh = "#!/system/bin/sh\n"
-        .. "PKG=\"" .. pkgName .. "\"\n"
-        .. "HB_FILE=\"/sdcard/guardian/heartbeat.txt\"\n"
-        .. "PID_FILE=\"/sdcard/guardian/guardian_shell.pid\"\n"
-        .. "LOG=\"/sdcard/guardian/" .. logName .. "\"\n"
-        .. "TIMEOUT=300\n"
-        .. "CHECK_INT=30\n"
-        .. "\n"
-        .. "log() { echo \"[$(date +%H:%M:%S)] $1\" >> \"$LOG\"; }\n"
-        .. "\n"
-        .. "# Write PID\n"
-        .. "echo $$ > \"$PID_FILE\"\n"
-        .. "log \"=== Guardian Started ===\"\n"
-        .. "log \"Package: $PKG\"\n"
-        .. "log \"Timeout: ${TIMEOUT}s\"\n"
-        .. "log \"Waiting for first heartbeat...\"\n"
-        .. "\n"
-        .. "# Init heartbeat\n"
-        .. "echo 0 > \"$HB_FILE\"\n"
-        .. "LAST_HB=0\n"
-        .. "START_TIME=$(date +%s)\n"
-        .. "RESTART_CNT=0\n"
-        .. "\n"
-        .. "while true; do\n"
-        .. "  NOW=$(date +%s)\n"
-        .. "  HB=$(cat \"$HB_FILE\" 2>/dev/null || echo 0)\n"
-        .. "  \n"
-        .. "  # Update heartbeat\n"
-        .. "  if [ \"$HB\" -gt \"$LAST_HB\" ]; then\n"
-        .. "    LAST_HB=$HB\n"
-        .. "    log \"Heartbeat: $HB\"\n"
-		.. "  else\n"
-        .. "    log \"Heartbeat: NULL\"\n"
-        .. "  fi\n"
-        .. "  \n"
-        .. "  # Check exit signal (-999)\n"
-        .. "  if [ \"$HB\" = \"-999\" ]; then\n"
-        .. "    log \"Exit signal received (-999), stopping...\"\n"
-        .. "    break\n"
-        .. "  fi\n"
-        .. "  \n"
-        .. "  # Calculate elapsed\n"
-        .. "  if [ \"$LAST_HB\" -gt 0 ]; then\n"
-        .. "    ELAPSED=$((NOW - LAST_HB))\n"
-        .. "  else\n"
-        .. "    ELAPSED=$((NOW - START_TIME))\n"
-        .. "  fi\n"
-        .. "  \n"
-        .. "  # Check timeout\n"
-        .. "  if [ \"$ELAPSED\" -gt \"$TIMEOUT\" ]; then\n"
-        .. "    log \"TIMEOUT: ${ELAPSED}s - Restarting...\"\n"
-        .. "    RESTART_CNT=$((RESTART_CNT + 1))\n"
-        .. "    if [ \"$RESTART_CNT\" -gt 10 ]; then\n"
-        .. "      log \"Max restart reached\"\n"
-        .. "      break\n"
-        .. "    fi\n"
-        .. "    log \"Stopping app...\"\n"
-        .. "    am force-stop \"$PKG\" 2>/dev/null\n"
-        .. "    sleep 1\n"
-        .. "    log \"Starting app...\"\n"
-        .. "    monkey -p \"$PKG\" -c android.intent.category.LAUNCHER 1 2>/dev/null\n"
-        .. "    log \"App restarted, waiting 20s...\"\n"
-        .. "    sleep 20\n"
-        .. "    log \"Click 369,1216\"\n"
-        .. "    input tap 369 1216\n"
-        .. "    sleep 2\n"
-        .. "    log \"Click 683,418\"\n"
-        .. "    input tap 683 418\n"
-        .. "    sleep 1\n"
-        .. "    log \"Click 277,406\"\n"
-        .. "    input tap 277 406\n"
-        .. "    log \"Restarted (#$RESTART_CNT)\"\n"
-        .. "    echo 0 > \"$HB_FILE\"\n"
-        .. "    LAST_HB=0\n"
-        .. "    START_TIME=$(date +%s)\n"
-        .. "  fi\n"
-        .. "  \n"
-        .. "  touch \"$PID_FILE\"\n"
-        .. "  sleep $CHECK_INT\n"
-        .. "done\n"
-        .. "\n"
-        .. "rm -f \"$PID_FILE\"\n"
-        .. "log \"=== Guardian Stopped ===\"\n"
+    local script = [[#!/system/bin/sh
+PKG="]] .. pkgName .. [["
+HB_FILE="/sdcard/guardian/heartbeat.txt"
+PID_FILE="/sdcard/guardian/guardian_shell.pid"
+LOG="/sdcard/guardian/]] .. logName .. [["
+TIMEOUT=300
+CHECK_INT=30
+
+log() { echo "[$(date +%H:%M:%S)] $1" >> "$LOG"; }
+
+# 创建/更新 start_eventsrvR 文件
+update_eventsrv() {
+  local files_dir="/data/data/$PKG/files"
+  local target_file="$files_dir/start_eventsrvR"
+  
+  # 确保目录存在
+  if [ ! -d "$files_dir" ]; then
+    log "创建目录: $files_dir"
+    mkdir -p "$files_dir" 2>/dev/null
+  fi
+  
+  # 写入文件内容
+  cat > "$target_file" << EOF
+export CLASSPATH=/data/user/0/]] .. pkgName .. [[/files/DaemonClient.zip
+exec /system/bin/app_process32 /data/user/0/]] .. pkgName .. [[/files com.cyjh.mobileanjian.ipc.ClientService ]] .. pkgName .. [[.event.localserver /data/user/0/]] .. pkgName .. [[/lib/libmqm.so 12030 &
+EOF
+  
+  chmod 755 "$target_file"
+  log "已更新: $target_file"
+}
+
+# Write PID
+echo $$ > "$PID_FILE"
+log "=== Guardian Started ==="
+log "Package: $PKG"
+log "Timeout: ${TIMEOUT}s"
+log "Waiting for first heartbeat..."
+
+# 更新 start_eventsrvR
+update_eventsrv
+
+# Init heartbeat
+echo 0 > "$HB_FILE"
+LAST_HB=0
+START_TIME=$(date +%s)
+RESTART_CNT=0
+
+while true; do
+  NOW=$(date +%s)
+  HB=$(cat "$HB_FILE" 2>/dev/null || echo 0)
+  
+  # Update heartbeat
+  if [ "$HB" -gt "$LAST_HB" ]; then
+    LAST_HB=$HB
+    log "Heartbeat: $HB"
+  else
+    log "Heartbeat: NULL"
+  fi
+  
+  # Check exit signal (-999)
+  if [ "$HB" = "-999" ]; then
+    log "Exit signal received (-999), stopping..."
+    break
+  fi
+  
+  # Calculate elapsed
+  if [ "$LAST_HB" -gt 0 ]; then
+    ELAPSED=$((NOW - LAST_HB))
+  else
+    ELAPSED=$((NOW - START_TIME))
+  fi
+  
+  # Check timeout
+  if [ "$ELAPSED" -gt "$TIMEOUT" ]; then
+    log "TIMEOUT: ${ELAPSED}s - Restarting..."
+    RESTART_CNT=$((RESTART_CNT + 1))
+    if [ "$RESTART_CNT" -gt 10 ]; then
+      log "Max restart reached"
+      break
+    fi
+    log "Stopping app..."
+    am force-stop "$PKG" 2>/dev/null
+    sleep 1
+    log "Starting app..."
+    monkey -p "$PKG" -c android.intent.category.LAUNCHER 1 2>/dev/null
+    log "App restarted, waiting 20s..."
+    sleep 20
+    log "Click 369,1216"
+    input tap 369 1216
+    sleep 2
+    log "Click 683,418"
+    input tap 683 418
+    sleep 1
+    log "Click 277,406"
+    input tap 277 406
+    log "Restarted (#$RESTART_CNT)"
+    echo 0 > "$HB_FILE"
+    LAST_HB=0
+    START_TIME=$(date +%s)
+    # 重启后也更新 start_eventsrvR
+    update_eventsrv
+  fi
+  
+  touch "$PID_FILE"
+  sleep $CHECK_INT
+done
+
+rm -f "$PID_FILE"
+log "=== Guardian Stopped ==="
+]]
     
     exec("mkdir -p /sdcard/guardian")
-    writeFile(SHELL_SCRIPT, sh)
+    writeFile(SHELL_SCRIPT, script)
     exec("chmod +x " .. SHELL_SCRIPT)
 end
 
 function QMPlugin.Test()
-    return "GuardianPlugin v4.6.0 OK"
+    return "GuardianPlugin v4.7.0 OK"
 end
 
 function QMPlugin.SendHeartbeat()
@@ -242,7 +270,8 @@ function QMPlugin.StopAllGuardian()
     exec(string.format("ps | grep GuardianShell | grep -v grep > %s", tmp))
     if fileExists(tmp) then
         local content = readFile(tmp)
-        for line in content:gmatch("[^\r\n]+") do
+        for line in content:gmatch("[^
+]+") do
             local p = line:match("^%s*(%d+)")
             if p then
                 exec(string.format("kill -TERM %s 2>/dev/null", p))
