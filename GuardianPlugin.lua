@@ -85,9 +85,6 @@ log "Package: $PKG"
 log "Timeout: ${TIMEOUT}s"
 log "Waiting for first heartbeat..."
 
-# 更新 start_eventsrvR
-update_eventsrv
-
 # Init heartbeat
 echo 0 > "$HB_FILE"
 LAST_HB=0
