@@ -84,6 +84,7 @@ local function generateScript(pkgName)
  table.insert(sh, " HB=$(cat \"$HB_FILE\" 2>/dev/null || echo 0)")
  table.insert(sh, " if [ \"$HB\" -gt \"$LAST_HB\" ]; then")
  table.insert(sh, " LAST_HB=$HB")
+ table.insert(sh, " RESTART_CNT=0")  -- 重启成功后重置计数
  table.insert(sh, " log \"Heartbeat: $HB\"")
  table.insert(sh, " else")
  table.insert(sh, " log \"Heartbeat: NULL\"")
